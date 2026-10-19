@@ -3,6 +3,9 @@ backend/target/
 frontend/dist/
 frontend/node_modules/
 
+# Frontend bundle copied into the backend by scripts/build-all.ps1
+backend/src/main/resources/static/
+
 # Local config / secrets
 backend/.env
 backend/application-local.yml

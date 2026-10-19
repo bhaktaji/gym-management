@@ -24,11 +24,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TenantStatusInterceptor implements HandlerInterceptor {
 
     private final GymRepository gymRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
     private final Map<String, CachedStatus> cache = new ConcurrentHashMap<>();
 
-    public TenantStatusInterceptor(GymRepository gymRepository) {
+    public TenantStatusInterceptor(GymRepository gymRepository, ObjectMapper objectMapper) {
         this.gymRepository = gymRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Override

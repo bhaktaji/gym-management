@@ -22,10 +22,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtFilter;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtFilter, ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -39,21 +40,15 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/v1/auth/login",
-                                "/api/v1/auth/refresh",
-                                "/api/v1/auth/signup",
-                                "/api/v1/auth/password-reset/**",
-                                "/api/v1/config/public",
-                                "/api/v1/pay/**",
-                                "/actuator/health",
-                                "/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/error"
-                        ).permitAll()
+                        // API surface
                         .requestMatchers("/api/v1/admin/**").hasRole("SUPER_ADMIN")
-                        .anyRequest().authenticated())
+                        .requestMatchers("/api/v1/auth/**", "/api/v1/config/**", "/api/v1/pay/**").permitAll()
+                        .requestMatchers("/api/**").authenticated()
+                        // ops endpoints
+                        .requestMatchers("/actuator/health", "/api-docs/**", "/swagger-ui/**",
+                                "/swagger-ui.html", "/error").permitAll()
+                        // SPA shell + static assets: the app itself is protected by the API
+                        .anyRequest().permitAll())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((req, res, e) -> writeError(res, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Missing or invalid token"))
                         .accessDeniedHandler((req, res, e) -> writeError(res, HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied")))
