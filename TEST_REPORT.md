@@ -155,7 +155,63 @@ calls (PowerShell `Invoke-RestMethod`):
 
 ---
 
-## 4. SKIPPED / NOT COVERED
+## 4. Startup scripts
+
+**Command**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\test-start-all.ps1
+```
+
+**Result: ALL 17 CHECKS PASSED**
+
+| # | Check | Observed |
+|---|---|---|
+| 1 | `start-all.ps1` exits 0 (cold start) | exit 0 |
+| 2 | backend `/actuator/health` returns UP | `"status":"UP"` |
+| 3 | the service on :8080 really is GymKhata | `/api/v1/config/public` → `"name":"GymKhata"` |
+| 4 | frontend on :5173 serves the app shell | 200, body contains `id="root"` |
+| 5 | backend can reach MongoDB | API answers |
+| 6 | second `start-all.ps1` run exits 0 | exit 0 |
+| 7 | no duplicate processes created by the re-run | tracked-process count unchanged |
+| 8 | re-run reused the running backend | log: "already running and healthy" |
+| 9 | re-run reused the running frontend | log: "already running" |
+| 10 | `stop-all.ps1 -WhatIf` exits 0 | exit 0 |
+| 11 | dry-run stops nothing | tracked-process count unchanged |
+| 12 | `stop-all.ps1` exits 0 | exit 0 |
+| 13 | no tracked process left running | tracked set empty afterwards |
+| 14 | **unrelated processes untouched** | the 3 unrelated `node`/`java` processes (other tooling) all survived; the stop killed a 7-process GymKhata tree only |
+| 15 | port 8080 free again | closed |
+| 16 | port 5173 free again | closed |
+| 17 | MongoDB left running | still accepting connections |
+
+### 4.1 Error paths, exercised individually
+
+| Scenario | Command | Observed |
+|---|---|---|
+| Missing jar | removed `backend\target\*.jar`, then `start-all.ps1` | `Backend jar not found ...` + how to build; **exit 4**; frontend never started |
+| Foreign service on :8080 | bound a plain TCP listener on 8080, then `start-all.ps1` | `Port 8080 is already in use by something that is not a healthy GymKhata backend`; **exit 3**; frontend never started |
+| `-Build` while the backend runs | `start-all.ps1 -Build` with the backend up | `The backend is running (pid N) and would block the jar from being overwritten.` + remedy; **exit 1**; no build attempted |
+| MongoDB unreachable | `start-all.ps1 -MongoPort 27117 -MongoTimeoutSec 15` | service detected by name, wait loop ran, `MongoDB did not become ready within 15s`; **exit 2**; backend/frontend never started |
+
+### 4.2 PowerShell syntax
+
+All eight scripts parse cleanly with
+`[System.Management.Automation.Language.Parser]::ParseFile` (0 errors):
+`build-all.ps1`, `process-tracking.ps1`, `resolve-jdk.ps1`, `run-dev.ps1`,
+`start-all.ps1`, `stop-all.ps1`, `stop-dev.ps1`, `test-start-all.ps1`.
+
+### 4.3 What could NOT be verified here
+
+| Item | Reason |
+|---|---|
+| Starting the MongoDB **Windows service** from a stopped state | This shell cannot stop the service (`Cannot open MongoDB service on computer '.'` — no elevation). The service *detection* (by name and display name) and the *failure* path (unreachable port → service found → wait → timeout → exit 2) were both verified; the actual `Start-Service` call was not executed against a stopped service. |
+| The script running inside an interactive console with a visible window | The verification ran the scripts headless with redirected output. `Start-Process -WindowStyle Hidden` gives each service its own hidden console, so they are not tied to the caller's window. |
+| Behaviour when the parent PowerShell is closed by the user | The services were confirmed to still be running and healthy 3 minutes after the launching script exited, but a real console close was not simulated. |
+
+---
+
+## 5. SKIPPED / NOT COVERED
 
 | Item | Reason |
 |---|---|
@@ -169,7 +225,7 @@ calls (PowerShell `Invoke-RestMethod`):
 
 ---
 
-## 5. Bugs found and fixed during the build
+## 6. Bugs found and fixed during the build
 
 Each of these was found by a test or a live check, then fixed and re-verified.
 
@@ -188,3 +244,11 @@ Each of these was found by a test or a live check, then fixed and re-verified.
 | 11 | Invoice PDF meta table passed two strings where a (text, font) pair was expected | Added a dedicated label/value cell |
 | 12 | PWA manifest was served as `application/octet-stream` | Use `manifest.json`, served correctly as `application/json` |
 | 13 | The build script used the machine's JRE 8 for Maven | `scripts/resolve-jdk.ps1` finds a JDK 17+ and sets it for the build only |
+| 14 | `stop-all.ps1` crashed with "Cannot overwrite variable PID" — `$pid` is a read-only automatic variable in PowerShell | Renamed the local variable to `$procId` |
+| 15 | The stop script reported a stale entry as cleaned up but left it in the state file | The stale branch now calls `Remove-GymKhataService` |
+| 16 | `stop-all.ps1` had to walk a 4-level process tree (`cmd → node npm-cli → cmd → node vite`) | `Get-DescendantProcessIds` walks recursively and stops children before parents |
+| 17 | The MongoDB driver check never engaged — `Get-ChildItem -Filter "bson-[0-9]*.jar"` does not match that pattern, and it would also have matched `bson-record-codec` | Filter with a regex on the file name and pick the newest version that has **all** required artifacts |
+| 18 | The MongoDB readiness timeout was overshot (67 s for a 10 s limit) because the driver's default server-selection timeout is 30 s | Added `serverSelectionTimeoutMS`/`connectTimeoutMS` to the ping URI, and check the TCP port first so a dead server fails in ~1.5 s |
+| 19 | The startup verification hung: `& powershell ... *> $log` waits for EOF on the redirected handle, which the spawned services inherit and hold open | The test now uses `Start-Process` + `Wait-Process` on the specific PID |
+| 20 | The test could not read the exit code of a `Start-Process` child (`ExitCode` is empty in Windows PowerShell) | Cache the process handle (`$null = $proc.Handle`) before the process exits |
+| 21 | A "no unrelated process was killed" assertion was flaky | The test now only counts long-lived unrelated processes (a short-lived helper that exits on its own is not "killed") |

@@ -11,6 +11,9 @@ backend/.env
 backend/application-local.yml
 *.local.yml
 
+# Runtime logs and process state written by scripts\start-all.ps1
+logs/
+
 # Data
 .data/
 

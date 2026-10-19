@@ -43,7 +43,26 @@ Delivered and verified:
 > `scripts/resolve-jdk.ps1` locates a JDK 17+ and sets it **for the build only** —
 > the global environment is never modified.
 
-### Build and run (single process, port 8080)
+### One command (recommended)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
+```
+
+Starts MongoDB (reuse or start the Windows service), then the backend
+(Spring Boot, jar), then the frontend (Vite dev server) — verifying each one
+before moving on. The services keep running after the script exits.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1   # stop what the script started
+powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1 -WhatIf  # dry run
+```
+
+`stop-all.ps1` only touches processes recorded in `logs/gymkhata-processes.json`
+(verified by PID **and** start time), so it never kills an unrelated process
+and never stops MongoDB.
+
+### Build and run by hand
 
 ```powershell
 # stop any running copy first, otherwise the jar is locked
@@ -110,6 +129,9 @@ mvn test
 cd frontend
 npm test
 npx tsc -b
+
+# startup scripts: start -> reuse -> dry-run -> stop lifecycle (17 checks)
+powershell -ExecutionPolicy Bypass -File scripts\test-start-all.ps1
 ```
 
 The backend tests create a throwaway MongoDB database
@@ -124,6 +146,11 @@ Full results, including what is **not** covered, are in `TEST_REPORT.md`.
 
 | Concern | Location |
 |---|---|
+| One-command startup | `scripts/start-all.ps1` |
+| Shutdown (tracked processes only) | `scripts/stop-all.ps1` |
+| Process tracking / HTTP & TCP probes | `scripts/process-tracking.ps1` |
+| JDK discovery (17+) | `scripts/resolve-jdk.ps1` (shared with the build) |
+| Startup script verification | `scripts/test-start-all.ps1` |
 | Money / GST / FY / numbering / words / phones / UPI / check-in rules | `backend/src/main/java/com/gymkhata/domain/` (pure, no Spring) |
 | JWT + refresh rotation | `backend/.../auth/security/`, `backend/.../auth/AuthService.java` |
 | Tenant isolation | `SecurityUtils.currentGymId()` (gymId always comes from the JWT) + `TenantStatusInterceptor` |
@@ -166,6 +193,10 @@ Full results, including what is **not** covered, are in `TEST_REPORT.md`.
    change the frontend, re-run it (or `npm run build` + copy) before packaging.
 10. **`app.jwt.secret` is a development value.** Change it before any real
     deployment, along with the super-admin password.
+11. **The startup scripts never touch global state.** They set `JAVA_HOME` only
+    inside their own process. `start-all.ps1` / `stop-all.ps1` communicate
+    through `logs/gymkhata-processes.json`; anything not in that file is left
+    alone.
 
 ---
 
