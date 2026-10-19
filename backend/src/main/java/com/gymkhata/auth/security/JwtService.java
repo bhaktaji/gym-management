@@ -22,13 +22,21 @@ public class JwtService {
     public static final String CLAIM_TYPE = "type";
     public static final String TYPE_ACCESS = "access";
 
+    /** The development default from application.yml - never acceptable in production. */
+    static final String DEV_SECRET = "gymkhata-dev-secret-change-me-0123456789abcdef0123456789abcdef";
+
     private final SecretKey key;
     private final String issuer;
     private final Duration accessTtl;
 
     public JwtService(@Value("${app.jwt.secret}") String secret,
                       @Value("${app.jwt.issuer}") String issuer,
-                      @Value("${app.jwt.access-token-ttl-minutes}") long accessTtlMinutes) {
+                      @Value("${app.jwt.access-token-ttl-minutes}") long accessTtlMinutes,
+                      @Value("${spring.profiles.active:default}") String activeProfile) {
+        if (activeProfile.contains("prod") && DEV_SECRET.equals(secret)) {
+            throw new IllegalStateException(
+                    "app.jwt.secret is still the development value. Set the JWT_SECRET environment variable.");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.issuer = issuer;
         this.accessTtl = Duration.ofMinutes(accessTtlMinutes);

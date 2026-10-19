@@ -66,6 +66,13 @@ Override with `SUPER_ADMIN_PHONE` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_NAME`.
 All configuration is environment-variable driven with sane defaults in
 `backend/src/main/resources/application.yml`. See `backend/.env.example`.
 
+### Profiles
+
+| Profile | Purpose |
+|---|---|
+| default / `dev` | Local MongoDB on `localhost:27017`, database `gymkhata_dev`, dev JWT secret |
+| `prod` | Everything must come from the environment. `JWT_SECRET` has **no default** — the app refuses to start with the development secret. Run with `--spring.profiles.active=prod`. |
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `MONGODB_URI` | `mongodb://localhost:27017/gymkhata_dev` | Database |
@@ -78,7 +85,9 @@ All configuration is environment-variable driven with sane defaults in
 | `RAZORPAY_*` | empty | Razorpay keys (off by default, NOT PRODUCTION-TESTED) |
 
 `app.jwt.secret` in `application.yml` is a **development** value. Set a long
-random value via configuration before any real deployment.
+random value via configuration (or `JWT_SECRET` under the `prod` profile)
+before any real deployment — the app refuses to start in `prod` with the
+development secret.
 
 ---
 

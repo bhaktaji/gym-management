@@ -1,0 +1,41 @@
+# Production profile.
+#
+# Activate with:  java -jar gymkhata-backend.jar --spring.profiles.active=prod
+#
+# Every secret below has NO default on purpose: the application refuses to start
+# if they are not supplied from the environment or a secret manager.
+app:
+  jwt:
+    # must be overridden - the app fails fast if this is left at the dev value
+    secret: ${JWT_SECRET}
+  super-admin:
+    phone: ${SUPER_ADMIN_PHONE:}
+    password: ${SUPER_ADMIN_PASSWORD:}
+    name: ${SUPER_ADMIN_NAME:Platform Admin}
+
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI}
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+
+logging:
+  level:
+    root: INFO
+    com.gymkhata: INFO
+  file:
+    name: ${LOG_FILE:logs/gymkhata.log}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

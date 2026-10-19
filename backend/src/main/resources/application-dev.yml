@@ -1,0 +1,17 @@
+# Development profile (default).
+# The local MongoDB server runs on localhost:27017 and the database is gymkhata_dev.
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/gymkhata_dev}
+
+logging:
+  level:
+    com.gymkhata: DEBUG
+    org.springframework.data.mongodb: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env
