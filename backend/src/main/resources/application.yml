@@ -13,10 +13,16 @@ server:
 app:
   name: GymKhata
   timezone: Asia/Kolkata
+  super-admin:
+    phone: ${SUPER_ADMIN_PHONE:+919000000001}
+    password: ${SUPER_ADMIN_PASSWORD:ChangeMe@123}
+    name: ${SUPER_ADMIN_NAME:Platform Admin}
   jwt:
     access-token-ttl-minutes: 15
     refresh-token-ttl-days: 30
     issuer: gymkhata
+    # override with a long random value in production (app.jwt.secret)
+    secret: "gymkhata-dev-secret-change-me-0123456789abcdef0123456789abcdef"
   signup:
     auto-activate: ${SIGNUP_AUTO_ACTIVATE:false}
   pricing:
