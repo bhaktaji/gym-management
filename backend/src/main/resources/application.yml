@@ -52,6 +52,13 @@ app:
     enabled: true
     start: "21:00"
     end: "08:00"
+  gst:
+    sac: "999723"
+    rates:
+      - rate: 18
+        effective-from: "2000-01-01"
+      - rate: 5
+        effective-from: "2025-09-22"
 
 management:
   endpoints:

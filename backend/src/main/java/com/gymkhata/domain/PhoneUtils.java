@@ -21,6 +21,8 @@ public final class PhoneUtils {
         String digits = input.replaceAll("[\\s\\-()]", "");
         if (digits.startsWith("+91")) {
             digits = digits.substring(3);
+        } else if (digits.startsWith("91") && digits.length() == 12) {
+            digits = digits.substring(2);
         } else if (digits.startsWith("0")) {
             digits = digits.substring(1);
         }

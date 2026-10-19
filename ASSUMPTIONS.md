@@ -55,3 +55,20 @@ Decisions made where the spec was silent, plus environment-driven choices.
     instants stored in UTC.
 22. **Reports** are computed with MongoDB aggregation pipelines (revenue, expiries, check-ins,
     plan-wise members) and are read-only.
+23. **One active membership per member:** enrolling again supersedes the previous active
+    membership (marked EXPIRED); the new membership starts the day after the old one expires.
+    This keeps "the member's active membership" unambiguous for check-ins.
+24. **Phone input forms accepted:** 10-digit, `0`-prefixed, `+91`-prefixed, and a bare
+    `91XXXXXXXXXX` (12-digit) form, because the last one is very common when copying a
+    number out of another app. All are stored as E.164 `+91XXXXXXXXXX`.
+25. **Payment → invoice link:** a payment always belongs to an invoice; the balance due on an
+    invoice is `invoice total − sum(CONFIRMED payments)`. Pending UPI payments do not reduce
+    the balance until the owner confirms them.
+26. **Invoice creation is explicit** (owner taps "Generate invoice" after enrolment) rather than
+    automatic, so that a gym can decide when to bill. The invoice is immutable once issued;
+    corrections are VOID (same number) or credit notes (own `CN` series).
+27. **Test databases:** all integration tests share one throwaway database
+    (`gymkhata_test_<random>`) which is dropped by a JVM shutdown hook when the test run ends.
+    Documents are cleared between tests; indexes are created by the app on startup.
+28. **Gym state codes** are stored as free text (e.g. "Madhya Pradesh"). A state-code table was
+    out of scope; IGST is applied when the member's state differs from the gym's state by name.

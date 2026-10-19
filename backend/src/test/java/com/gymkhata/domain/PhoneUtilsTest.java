@@ -16,6 +16,7 @@ class PhoneUtilsTest {
         assertEquals("+919876543210", PhoneUtils.normalize("+919876543210"));
         assertEquals("+919876543210", PhoneUtils.normalize("+91 98765 43210"));
         assertEquals("+919876543210", PhoneUtils.normalize("98765-43210"));
+        assertEquals("+919876543210", PhoneUtils.normalize("919876543210"));
     }
 
     @Test
