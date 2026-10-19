@@ -1,0 +1,17 @@
+# Build output
+backend/target/
+frontend/dist/
+frontend/node_modules/
+
+# Local config / secrets
+backend/.env
+backend/application-local.yml
+*.local.yml
+
+# Data
+.data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
