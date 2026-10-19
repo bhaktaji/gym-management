@@ -7,9 +7,10 @@ Decisions made where the spec was silent, plus environment-driven choices.
    Microsoft OpenJDK 21.0.12.1 is installed at `C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot\`.
    All build/run commands set `JAVA_HOME` to that JDK per-command. The global PATH is never modified.
 2. **MongoDB:** A MongoDB 9.0.2 server is already running as a Windows service on
-   `localhost:27017`. It is used as-is (no second instance started). Replica-set detection is
-   performed via the Java driver at backend bring-up; the app is designed for standalone
-   (no multi-document transactions) regardless of the result.
+   `localhost:27017`. It is used as-is (no second instance started). Topology detected via the
+   Java driver (`MongoConnectivityTest`): `setName=null, isWritablePrimary=true` → **standalone,
+   not a replica set**. The app therefore uses no multi-document transactions (single-document
+   atomic ops, unique indexes, idempotency keys, compensating steps).
 3. **mongosh is absent.** DB introspection/verification is done through the MongoDB Java driver
    (small verification programs run via `mvn` exec or test-scoped code), not mongosh.
 4. **No browser is installed** (no Chrome/Edge). Browser-based UI verification is SKIPPED;

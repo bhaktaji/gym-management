@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: gymkhata-backend
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/gymkhata_dev}
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  name: GymKhata
+  timezone: Asia/Kolkata
+  jwt:
+    access-token-ttl-minutes: 15
+    refresh-token-ttl-days: 30
+    issuer: gymkhata
+  signup:
+    auto-activate: ${SIGNUP_AUTO_ACTIVATE:false}
+  pricing:
+    monthly-price-paise: 99900
+    currency: INR
+    included: "Unlimited members, Memberships billing & GST invoices, UPI payments with QR, Check-ins, WhatsApp reminders, Leads reports & CSV import"
+    not-charged: "No per-member fees, No per-message fees"
+  upi:
+    vpa-regex: "^[a-zA-Z0-9.\\-_]{2,}@[a-zA-Z]{2,}$"
+  security:
+    password-reset-ttl-minutes: 30
+  messaging:
+    provider: ${MESSAGING_PROVIDER:clicktochat}
+    whatsapp-cloud:
+      enabled: ${WHATSAPP_CLOUD_ENABLED:false}
+      token: ${WHATSAPP_CLOUD_TOKEN:}
+      phone-number-id: ${WHATSAPP_CLOUD_PHONE_NUMBER_ID:}
+      template-renewal-en: ${WHATSAPP_CLOUD_TEMPLATE_RENEWAL_EN:gymkhata_renewal_en}
+      template-renewal-hi: ${WHATSAPP_CLOUD_TEMPLATE_RENEWAL_HI:gymkhata_renewal_hi}
+  payments:
+    provider: ${PAYMENT_PROVIDER:directupi}
+    razorpay:
+      enabled: ${RAZORPAY_ENABLED:false}
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+  quiet-hours:
+    enabled: true
+    start: "21:00"
+    end: "08:00"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.gymkhata: INFO
