@@ -43,24 +43,38 @@ Delivered and verified:
 > `scripts/resolve-jdk.ps1` locates a JDK 17+ and sets it **for the build only** —
 > the global environment is never modified.
 
-### One command (recommended)
+### One command — batch (double-click friendly)
+
+```bat
+start-all.bat
+```
+
+Opens a console window per service (backend on :8080, Vite on :5173), waits
+until both answer, then opens the browser. `start-all.bat build` builds the
+project first. Stop with `stop-all.bat`.
+
+Two things this launcher does not assume, because assuming them breaks it:
+
+- **the `java` on `PATH` is a JRE 8**, not a JDK — the jar is Java 21, so the
+  launcher locates a real JDK 17+ and puts its `bin` on `PATH` for its own
+  process only (the global `PATH` and `JAVA_HOME` are never modified);
+- **the frontend is on :5173**, which `vite.config.ts` pins with
+  `strictPort: true` so it can never silently drift to :5174 (the backend CORS
+  allowlist only lists :5173).
+
+### One command — PowerShell (headless, log files)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
-```
-
-Starts MongoDB (reuse or start the Windows service), then the backend
-(Spring Boot, jar), then the frontend (Vite dev server) — verifying each one
-before moving on. The services keep running after the script exits.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1   # stop what the script started
+powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1   # stop what it started
 powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1 -WhatIf  # dry run
 ```
 
 `stop-all.ps1` only touches processes recorded in `logs/gymkhata-processes.json`
 (verified by PID **and** start time), so it never kills an unrelated process
 and never stops MongoDB.
+
+> Use one launcher or the other — the two track their processes differently.
 
 ### Build and run by hand
 
@@ -146,8 +160,9 @@ Full results, including what is **not** covered, are in `TEST_REPORT.md`.
 
 | Concern | Location |
 |---|---|
-| One-command startup | `scripts/start-all.ps1` |
-| Shutdown (tracked processes only) | `scripts/stop-all.ps1` |
+| One-command startup (batch, console windows) | `start-all.bat` |
+| One-command startup (PowerShell, headless) | `scripts/start-all.ps1` |
+| Shutdown | `stop-all.bat` (console windows) / `scripts/stop-all.ps1` (tracked pids) |
 | Process tracking / HTTP & TCP probes | `scripts/process-tracking.ps1` |
 | JDK discovery (17+) | `scripts/resolve-jdk.ps1` (shared with the build) |
 | Startup script verification | `scripts/test-start-all.ps1` |
@@ -197,6 +212,10 @@ Full results, including what is **not** covered, are in `TEST_REPORT.md`.
     inside their own process. `start-all.ps1` / `stop-all.ps1` communicate
     through `logs/gymkhata-processes.json`; anything not in that file is left
     alone.
+12. **The frontend must run on :5173.** `vite.config.ts` sets
+    `strictPort: true` so Vite fails loudly instead of drifting to :5174,
+    which the backend CORS allowlist does not include. If you change the port,
+    change `app.cors-allowed-origins` in `application.yml` too.
 
 ---
 

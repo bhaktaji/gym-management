@@ -26,41 +26,62 @@ check-ins → WhatsApp renewal reminder → renewal.
 
 ## Quick start
 
-### One command (recommended)
+### One command — batch (double-click friendly)
+
+```bat
+start-all.bat
+```
+
+Double-click it, or run it from the repository root. It opens two console
+windows (one per service) so their logs stay readable, waits until both are
+actually answering, and then opens your browser:
+
+```
+[1/4] Checking MongoDB...     reuse the running instance, or start the service
+[2/4] Starting the backend... Spring Boot on :8080
+[3/4] Starting the frontend...Vite on :5173
+[4/4] Waiting for the backend and the frontend to come up...
+```
+
+| URL | What |
+|---|---|
+| http://localhost:5173 | Vite dev server (proxies `/api` to :8080) |
+| http://localhost:8080 | Backend + API |
+| http://localhost:8080/admin | Super-admin console |
+| http://localhost:8080/swagger-ui.html | API docs |
+
+Stop it again with:
+
+```bat
+stop-all.bat
+```
+
+`start-all.bat build` builds the project first (frontend + jar) and then starts.
+`start-all.bat` never modifies your system `PATH`, `JAVA_HOME` or registry, and
+never touches any database.
+
+### One command — PowerShell (headless, log files)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
 ```
 
-That single command starts everything in the right order and waits until each
-service is actually usable:
-
-```
-[1/3] Checking MongoDB...      reuse a healthy instance, or start the Windows service
-[2/3] Starting backend...      Spring Boot on :8080, verified via /actuator/health
-[3/3] Starting frontend...     Vite dev server on :5173
-```
-
-| URL | What |
-|---|---|
-| http://localhost:8080 | Backend + API (serves the built app too) |
-| http://localhost:5173 | Vite dev server (proxies `/api` to :8080) |
-| http://localhost:8080/admin | Super-admin console |
-| http://localhost:8080/swagger-ui.html | API docs |
-
-Stop everything again:
+Same three stages, but nothing is shown in a window: the services run in the
+background, write to `logs/`, and are stopped with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
 ```
 
-The services keep running after the startup script exits. `stop-all.ps1` stops
-**only** the processes this script started — it records their PIDs in
-`logs/gymkhata-processes.json` and compares the recorded start time, so a
+`stop-all.ps1` stops **only** the processes it started — it records their PIDs
+in `logs/gymkhata-processes.json` and compares the recorded start time, so a
 recycled PID is never killed and a service that was already running before is
-left alone.
+left alone. `stop-all.bat` does the same thing for the console windows the
+batch launcher opens.
 
-Useful switches:
+Pick one launcher and stick to it: the two use different tracking mechanisms.
+
+Useful switches for the PowerShell launcher:
 
 | Switch | Effect |
 |---|---|
@@ -98,23 +119,25 @@ powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1
 
 | Requirement | Notes |
 |---|---|
-| **MongoDB** running on `localhost:27017` | `start-all.ps1` reuses a healthy instance, or starts the `MongoDB` Windows service. It never deletes or resets data. |
-| **JDK 17+** | Found automatically (`scripts/resolve-jdk.ps1`); the machine's global `JAVA_HOME` is never changed. |
+| **MongoDB** running on `localhost:27017` | Both launchers reuse a healthy instance, or start the `MongoDB` Windows service. Neither ever deletes or resets data. |
+| **JDK 17+** | The batch launcher locates one itself (the `java` on `PATH` here is a JRE 8, which cannot run the Java 21 jar). The PowerShell launcher reuses `scripts/resolve-jdk.ps1`. The global `JAVA_HOME` is never changed. |
 | **Node.js 18+** | For the Vite dev server. `frontend/node_modules` must exist — run `cd frontend; npm install` once. |
-| **The built jar** | `backend\target\gymkhata-backend-0.1.0.jar`. If it is missing, `start-all.ps1` tells you to run `build-all.ps1` (or pass `-Build`). |
+| **The built jar** | `backend\target\gymkhata-backend-0.1.0.jar`. If it is missing, `start-all.bat` tells you to run `build-all.ps1` (or pass `build`). |
+| **curl.exe** | Ships with Windows 10 1803+. Used for the readiness probes; the launcher skips them with a warning if it is absent. |
 
 ### Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| `Backend jar not found ...` | Run `scripts\build-all.ps1`, or start with `-Build`. |
+| `No backend jar in ...` | Run `scripts\build-all.ps1`, or `start-all.bat build`. |
+| `No JDK 17 or newer could be located` | Install a JDK 17+ (21 recommended) — the `java` on `PATH` is a JRE 8. |
 | `Port 8080 is already in use by something that is not a healthy GymKhata backend` | Another program owns :8080. Stop it, or pass `-BackendPort`. |
 | `node_modules is missing` | Run `cd frontend; npm install` once. |
-| `MongoDB did not become ready within Ns` | The `MongoDB` service could not be started or the port is not open. Check `Get-Service MongoDB` and the port. |
-| `The backend did not become healthy within Ns` | Read `logs\backend.log` and `logs\backend.err.log` — the script prints the tail of both. |
-| `The frontend did not start within Ns` | Read `logs\frontend.log` / `logs\frontend.err.log`. |
+| `MongoDB did not become ready within Ns` | The `MongoDB` service could not be started or the port is not open. Check `Get-Service MongoDB`. |
+| `The backend did not answer within Ns` | Read the "GymKhata Backend" console window (batch) or `logs\backend.log` (PowerShell) for the stack trace. |
+| The frontend comes up on :5174 | Vite is configured with `strictPort: true`, so this should fail loudly instead. Close whatever holds :5173. |
 | `ACCOUNT_SUSPENDED` | The gym was suspended in the admin console; reactivate it there. |
-| Want to see what `stop-all.ps1` would do | `scripts\stop-all.ps1 -WhatIf` |
+| Want to see what `stop-all` would do | `scripts\stop-all.ps1 -WhatIf` |
 
 Logs live in `logs/` (`backend.log`, `backend.err.log`, `frontend.log`,
 `frontend.err.log`) and are git-ignored. The scripts never write passwords,
@@ -166,19 +189,21 @@ development secret.
 
 ```
 gymkhata/
-  backend/          Spring Boot API (feature packages: auth, admin, tenant, member,
-                    plan, membership, billing, checkin, messaging, lead, report,
-                    importer, audit, common)
-  frontend/         Vite + React + TS PWA
-  docs/             domain rules, API surface, data model
-  scripts/          start-all.ps1, stop-all.ps1, build-all.ps1, run-dev.ps1,
-                    stop-dev.ps1, test-start-all.ps1, resolve-jdk.ps1,
-                    process-tracking.ps1
-  logs/             runtime logs + process state (git-ignored, created on start)
-  ENV_REPORT.md     what was detected on this machine
-  ASSUMPTIONS.md    every decision taken where the spec was silent
-  TEST_REPORT.md    what was actually run, with real counts
-  HANDOVER.md       how to run, test and extend it
+  start-all.bat        one-click launcher (console windows + browser)
+  stop-all.bat         closes what start-all.bat opened
+  backend/             Spring Boot API (feature packages: auth, admin, tenant, member,
+                       plan, membership, billing, checkin, messaging, lead, report,
+                       importer, audit, common)
+  frontend/            Vite + React + TS PWA
+  docs/                domain rules, API surface, data model
+  scripts/             start-all.ps1, stop-all.ps1, build-all.ps1, run-dev.ps1,
+                       stop-dev.ps1, test-start-all.ps1, resolve-jdk.ps1,
+                       process-tracking.ps1
+  logs/                runtime logs + process state (git-ignored, created on start)
+  ENV_REPORT.md        what was detected on this machine
+  ASSUMPTIONS.md       every decision taken where the spec was silent
+  TEST_REPORT.md       what was actually run, with real counts
+  HANDOVER.md          how to run, test and extend it
 ```
 
 ---
@@ -246,7 +271,6 @@ cd frontend; npm test; npx tsc -b
 # startup scripts: full start / reuse / dry-run / stop lifecycle
 powershell -ExecutionPolicy Bypass -File scripts\test-start-all.ps1
 ```
-
 See `TEST_REPORT.md` for the full list and what is **not** covered.
 
 ---

@@ -42,6 +42,10 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    // Fail loudly instead of silently moving to 5174. The backend CORS
+    // allowlist in application.yml lists http://localhost:5173 only, so a
+    // dev server on any other port would be blocked by the browser.
+    strictPort: true,
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
     },

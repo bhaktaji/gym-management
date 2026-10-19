@@ -194,20 +194,72 @@ powershell -ExecutionPolicy Bypass -File scripts\test-start-all.ps1
 | `-Build` while the backend runs | `start-all.ps1 -Build` with the backend up | `The backend is running (pid N) and would block the jar from being overwritten.` + remedy; **exit 1**; no build attempted |
 | MongoDB unreachable | `start-all.ps1 -MongoPort 27117 -MongoTimeoutSec 15` | service detected by name, wait loop ran, `MongoDB did not become ready within 15s`; **exit 2**; backend/frontend never started |
 
-### 4.2 PowerShell syntax
+### 4.2 Batch launcher (`start-all.bat` / `stop-all.bat`)
+
+**Command**
+
+```bat
+start-all.bat
+```
+
+**Observed output (real run, captured from the launcher's own log)**
+
+```
+ [OK]    JDK on PATH for this run: C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot\bin
+ [1/4] Checking MongoDB...
+ [OK]    MongoDB is already listening on port 27017 - reusing it.
+ [OK]    MongoDB is ready on port 27017.
+ [2/4] Starting the GymKhata backend...
+ [3/4] Starting the GymKhata frontend...
+ [4/4] Waiting for the backend and the frontend to come up...
+         Backend answered after 6 probe(s).
+         Frontend answered after 1 probe(s).
+ Opening http://localhost:5173
+```
+
+Live probes taken while the launcher was running:
+
+| Probe | Result |
+|---|---|
+| `GET http://localhost:8080/` | 200 |
+| `GET http://localhost:5173/` | 200 |
+| `GET http://localhost:5173/api/v1/config/public` (through the Vite proxy) | `{"name":"GymKhata",…}` |
+| `POST http://localhost:5173/api/v1/auth/login` (through the Vite proxy) | OK, role `SUPER_ADMIN` |
+
+`stop-all.bat` afterwards:
+
+| Check | Result |
+|---|---|
+| Pass 1 — `scripts\stop-all.ps1` | "No tracked processes to stop" (the batch-launched windows are not in the PS tracker's state file) |
+| Pass 2 — command-line sweep | 3 processes stopped, including the `cmd /k` console window and the Vite `node` chain |
+| Port 8080 afterwards | closed |
+| Port 5173 afterwards | closed |
+| Port 27017 afterwards | **still open** — MongoDB is never stopped |
+| Unrelated `node`/`java` processes on this machine | all survived |
+
+Other batch paths exercised:
+
+| Scenario | Observed |
+|---|---|
+| Missing jar | `[ERROR] No backend jar in "...\backend\target".` + how to build; **exit 1**; no service started |
+| `start-all.bat build` | Ran the real build (frontend `tsc`+`vite`, then `mvn package`), printed "Build complete.", then continued with the normal startup — backend and frontend both answered |
+| `stop-all.bat` on a clean machine | "No tracked processes to stop", no errors |
+
+### 4.3 PowerShell syntax
 
 All eight scripts parse cleanly with
 `[System.Management.Automation.Language.Parser]::ParseFile` (0 errors):
 `build-all.ps1`, `process-tracking.ps1`, `resolve-jdk.ps1`, `run-dev.ps1`,
 `start-all.ps1`, `stop-all.ps1`, `stop-dev.ps1`, `test-start-all.ps1`.
 
-### 4.3 What could NOT be verified here
+### 4.4 What could NOT be verified here
 
 | Item | Reason |
 |---|---|
 | Starting the MongoDB **Windows service** from a stopped state | This shell cannot stop the service (`Cannot open MongoDB service on computer '.'` — no elevation). The service *detection* (by name and display name) and the *failure* path (unreachable port → service found → wait → timeout → exit 2) were both verified; the actual `Start-Service` call was not executed against a stopped service. |
 | The script running inside an interactive console with a visible window | The verification ran the scripts headless with redirected output. `Start-Process -WindowStyle Hidden` gives each service its own hidden console, so they are not tied to the caller's window. |
 | Behaviour when the parent PowerShell is closed by the user | The services were confirmed to still be running and healthy 3 minutes after the launching script exited, but a real console close was not simulated. |
+| The batch launcher opened **visible** console windows | The harness has no interactive desktop, so the `start`-created windows could not be seen. What was verified is that `start` really spawns them (the services came up and answered), and that `stop-all.bat` finds and kills the same process tree by command line. |
 
 ---
 
@@ -252,3 +304,10 @@ Each of these was found by a test or a live check, then fixed and re-verified.
 | 19 | The startup verification hung: `& powershell ... *> $log` waits for EOF on the redirected handle, which the spawned services inherit and hold open | The test now uses `Start-Process` + `Wait-Process` on the specific PID |
 | 20 | The test could not read the exit code of a `Start-Process` child (`ExitCode` is empty in Windows PowerShell) | Cache the process handle (`$null = $proc.Handle`) before the process exits |
 | 21 | A "no unrelated process was killed" assertion was flaky | The test now only counts long-lived unrelated processes (a short-lived helper that exits on its own is not "killed") |
+| 22 | `stop-all.bat` failed with "and was unexpected at this time" | `Install a JDK 17+ (21 recommended)` — an unescaped `(` inside a parenthesised block makes cmd treat "and" as a command. Parentheses in block echoes are now escaped as `^(` / `^)` |
+| 23 | `start-all.bat` aborted because `call "build-all.ps1"` made cmd try to run a PowerShell script as a batch file | Invoke the host explicitly: `call powershell -NoProfile -ExecutionPolicy Bypass -File "..."` |
+| 24 | The batch stop sweep failed with "A positional parameter cannot be found that accepts argument '^'" | Inside `for /f "usebackq"` backticks the `^` is passed through literally. The sweep now calls PowerShell directly (the whole command is one quoted argument), so no escaping is needed |
+| 25 | The batch launcher failed to start the backend | The `java` on `PATH` is a JRE 8 and cannot run the Java 21 jar. The launcher now locates a JDK 17+ and prepends its `bin` to `PATH` for its own process only |
+| 26 | The frontend silently came up on :5174, so the readiness probe and the CORS allowlist both pointed at the wrong port | `vite.config.ts` now sets `strictPort: true`, so Vite fails loudly instead of drifting |
+| 27 | `timeout /t N` aborts with "Input redirection is not supported" when the script's stdin is redirected | The sleep helper falls back to PowerShell `Start-Sleep` when `timeout` fails |
+| 28 | `echo ... -> ...` silently created files named after the echoed text | `>` is a redirection operator even in an echo. The batch scripts avoid it in message text |
