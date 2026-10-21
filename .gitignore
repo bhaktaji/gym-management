@@ -1,23 +1,121 @@
-# Build output
+# ---------------------------------------------------------------------------
+# GymKhata - .gitignore
+#
+# Keeps the repository minimal and build-ready: source and configuration are
+# tracked, everything generated at build or run time is ignored.
+# ---------------------------------------------------------------------------
+
+# --- Build output -----------------------------------------------------------
 backend/target/
 frontend/dist/
-frontend/node_modules/
-
-# Frontend bundle copied into the backend by scripts/build-all.ps1
+frontend/.vite/
+# Frontend bundle copied into the backend by scripts/build-all.ps1. This is
+# generated from frontend/dist at build time and must never be committed.
 backend/src/main/resources/static/
+build/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.tsbuildinfo
 
-# Local config / secrets
-backend/.env
-backend/application-local.yml
+# --- Dependencies -----------------------------------------------------------
+frontend/node_modules/
+frontend/.pnpm-store/
+node_modules/
+.pnp
+.pnp.js
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+.gradle/
+.cxx/
+
+# --- Environment / secrets --------------------------------------------------
+# Keep the committed example files; ignore every real environment file.
+.env
+.env.*
+!.env.example
 *.local.yml
+*.local.yaml
+*.local.properties
+application-local.yml
+application-local.yaml
+application-local.properties
+secrets.*
+credentials.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pkcs12
+id_rsa
+id_ed25519
+*.ppk
+.npmrc
+.pypirc
 
-# Runtime logs and process state written by scripts\start-all.ps1
+# --- IDE / editor metadata --------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+.eclipse/
+.classpath
+.project
+.settings/
+nbproject/
+nb-configuration.xml
+*.sublime-project
+*.sublime-workspace
+.factorypath
+
+# --- Runtime logs, dumps, caches -------------------------------------------
 logs/
-
-# Data
-.data/
-
-# OS / editor
-.DS_Store
-Thumbs.db
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.pid
+*.seed
+*.pid.lock
+coverage/
+.nyc_output/
+.pytest_cache/
+.cache/
+*.tmp
+*.temp
+*.orig
+*.rej
+*.swp
+*~
+
+# --- Local database / application data -------------------------------------
+.data/
+*.sqlite
+*.sqlite3
+*.db
+
+# --- OS generated -----------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
