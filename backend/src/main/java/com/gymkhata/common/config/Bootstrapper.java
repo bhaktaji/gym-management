@@ -55,7 +55,7 @@ public class Bootstrapper implements ApplicationRunner {
         }
         String e164 = PhoneUtils.normalize(phone);
         if (e164 == null) {
-            log.error("Configured super-admin phone is invalid: {}", phone);
+            log.error("Configured super-admin phone is invalid: {}", PhoneUtils.mask(phone));
             return;
         }
         User admin = new User();

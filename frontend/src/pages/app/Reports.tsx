@@ -34,9 +34,16 @@ export function Reports() {
     queryFn: () => api<ExpiringRow[]>('/api/v1/reports/expiring?days=30'),
   })
 
+  const gym = useQuery({
+    queryKey: ['gym'],
+    queryFn: () => api<{ settings?: { attendanceEnabled?: boolean } }>('/api/v1/tenant/gym'),
+  })
+  const attendanceEnabled = Boolean(gym.data?.settings?.attendanceEnabled)
+
   const checkins = useQuery({
     queryKey: ['checkins-report', 30],
     queryFn: () => api<CheckinPoint[]>('/api/v1/reports/checkins?days=30'),
+    enabled: attendanceEnabled,
   })
 
   const plans = useQuery({
@@ -80,24 +87,26 @@ export function Reports() {
         )}
       </Card>
 
-      <Card className="mt-4">
-        <h2 className="font-semibold text-slate-900 mb-3">{t('reports.checkins')}</h2>
-        {checkinData.length === 0 ? (
-          <EmptyState title={t('reports.noData')} />
-        ) : (
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={checkinData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Line type="monotone" dataKey="count" name="Check-ins" stroke="#0d9488" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </Card>
+      {attendanceEnabled && (
+        <Card className="mt-4">
+          <h2 className="font-semibold text-slate-900 mb-3">{t('reports.checkins')}</h2>
+          {checkinData.length === 0 ? (
+            <EmptyState title={t('reports.noData')} />
+          ) : (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={checkinData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" name="Visits" stroke="#0d9488" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card className="mt-4">
         <h2 className="font-semibold text-slate-900 mb-3">{t('reports.plans')}</h2>

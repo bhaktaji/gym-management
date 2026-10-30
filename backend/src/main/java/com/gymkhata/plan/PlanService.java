@@ -8,7 +8,6 @@ import com.gymkhata.plan.model.Plan;
 import com.gymkhata.plan.repo.PlanRepository;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -29,6 +28,10 @@ public class PlanService {
     }
 
     public Plan create(String name, int durationDays, long pricePaise) {
+        return create(name, durationDays, pricePaise, 0L);
+    }
+
+    public Plan create(String name, int durationDays, long pricePaise, long joiningFeePaise) {
         if (name == null || name.isBlank()) {
             throw BusinessException.badRequest("INVALID_NAME", "Plan name is required");
         }
@@ -38,12 +41,16 @@ public class PlanService {
         if (pricePaise < 0) {
             throw BusinessException.badRequest("INVALID_PRICE", "Price must be >= 0");
         }
+        if (joiningFeePaise < 0) {
+            throw BusinessException.badRequest("INVALID_JOINING_FEE", "Joining fee must be >= 0");
+        }
         String gymId = SecurityUtils.currentGymId();
         Plan plan = new Plan();
         plan.setGymId(gymId);
         plan.setName(name.trim());
         plan.setDurationDays(durationDays);
         plan.setPricePaise(pricePaise);
+        plan.setJoiningFeePaise(joiningFeePaise);
         plan.setActive(true);
         plan.setCreatedAt(clock.now());
         plan.setUpdatedAt(clock.now());
@@ -53,6 +60,10 @@ public class PlanService {
     }
 
     public Plan update(String id, String name, Integer durationDays, Long pricePaise, Boolean active) {
+        return update(id, name, durationDays, pricePaise, null, active);
+    }
+
+    public Plan update(String id, String name, Integer durationDays, Long pricePaise, Long joiningFeePaise, Boolean active) {
         String gymId = SecurityUtils.currentGymId();
         Plan plan = planRepository.findById(id)
                 .filter(p -> gymId.equals(p.getGymId()))
@@ -71,6 +82,12 @@ public class PlanService {
                 throw BusinessException.badRequest("INVALID_PRICE", "Price must be >= 0");
             }
             plan.setPricePaise(pricePaise);
+        }
+        if (joiningFeePaise != null) {
+            if (joiningFeePaise < 0) {
+                throw BusinessException.badRequest("INVALID_JOINING_FEE", "Joining fee must be >= 0");
+            }
+            plan.setJoiningFeePaise(joiningFeePaise);
         }
         if (active != null) {
             plan.setActive(active);

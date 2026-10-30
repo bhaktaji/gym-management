@@ -69,15 +69,19 @@ type RequestOptions = {
   body?: unknown
   auth?: boolean
   raw?: boolean
+  headers?: Record<string, string>
 }
 
 export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true, raw = false } = options
+  const { method = 'GET', body, auth = true, raw = false, headers: customHeaders } = options
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (auth) {
     const tokens = getTokens()
     if (tokens) headers['Authorization'] = `Bearer ${tokens.accessToken}`
+  }
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
   }
 
   const send = async (): Promise<Response> =>

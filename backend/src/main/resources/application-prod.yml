@@ -2,16 +2,20 @@
 #
 # Activate with:  java -jar gymkhata-backend.jar --spring.profiles.active=prod
 #
-# Every secret below has NO default on purpose: the application refuses to start
-# if they are not supplied from the environment or a secret manager.
+# Every secret and origin below has NO default on purpose: ProdConfigValidator
+# refuses to start if they are missing, weak, or left at development defaults.
 app:
+  cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   jwt:
-    # must be overridden - the app fails fast if this is left at the dev value
-    secret: ${JWT_SECRET}
+    secret: ${JWT_SECRET:}
   super-admin:
     phone: ${SUPER_ADMIN_PHONE:}
     password: ${SUPER_ADMIN_PASSWORD:}
     name: ${SUPER_ADMIN_NAME:Platform Admin}
+  security:
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      requests-per-minute: ${RATE_LIMIT_RPM:30}
 
 spring:
   data:
@@ -19,23 +23,37 @@ spring:
       uri: ${MONGODB_URI}
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:${PORT:8080}}
+  forward-headers-strategy: framework
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      internal-proxies: "127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|0:0:0:0:0:0:0:1|::1|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3}|169\\.254\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[0-1])\\.\\d{1,3}\\.\\d{1,3}"
   error:
     include-stacktrace: never
     include-message: never
 
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+
+# Structured JSON logs to stdout (Cloud Run / container log collector compatible; no local log files or PII)
 logging:
+  structured:
+    format:
+      console: ecs
   level:
     root: INFO
     com.gymkhata: INFO
-  file:
-    name: ${LOG_FILE:logs/gymkhata.log}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health
   endpoint:
     health:
       show-details: never

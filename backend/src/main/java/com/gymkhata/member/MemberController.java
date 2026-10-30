@@ -40,7 +40,7 @@ public class MemberController {
     }
 
     @PostMapping
-    @Operation(summary = "Enrol a new member")
+    @Operation(summary = "Enrol a new member (generates 4-digit PIN returned once)")
     public Member create(@Valid @RequestBody MemberRequest req) {
         return memberService.create(req.name(), req.phone(), req.email(), req.gender(), req.dob(),
                 req.address(), req.state(), req.whatsappOptIn(), req.notes());
@@ -63,6 +63,30 @@ public class MemberController {
     @Operation(summary = "Activate/deactivate a member")
     public Member setStatus(@PathVariable String id, @RequestBody Map<String, String> req) {
         return memberService.setStatus(id, req.get("status"));
+    }
+
+    @PostMapping("/{id}/reset-pin")
+    @Operation(summary = "Reset a member's 4-digit self check-in PIN (shown once)")
+    public Map<String, Object> resetPin(@PathVariable String id) {
+        return memberService.resetPin(id);
+    }
+
+    @PostMapping("/{id}/reset-pin-lockout")
+    @Operation(summary = "Owner unlocks a member locked out by failed PIN attempts instantly")
+    public Member resetPinLockout(@PathVariable String id) {
+        return memberService.resetPinLockout(id);
+    }
+
+    @DeleteMapping("/{id}/devices")
+    @Operation(summary = "Revoke all bound check-in devices for a member")
+    public Member revokeAllDevices(@PathVariable String id) {
+        return memberService.revokeDevice(id, null);
+    }
+
+    @DeleteMapping("/{id}/devices/{deviceId}")
+    @Operation(summary = "Revoke a specific bound check-in device for a member")
+    public Member revokeDevice(@PathVariable String id, @PathVariable String deviceId) {
+        return memberService.revokeDevice(id, deviceId);
     }
 
     @GetMapping("/{id}/export")

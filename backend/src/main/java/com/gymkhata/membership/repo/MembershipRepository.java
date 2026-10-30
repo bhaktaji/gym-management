@@ -14,5 +14,7 @@ public interface MembershipRepository extends MongoRepository<Membership, String
 
     Membership findFirstByGymIdAndMemberIdAndStatusOrderByExpiryDateDesc(String gymId, String memberId, String status);
 
+    Membership findFirstByGymIdAndMemberIdOrderByExpiryDateDesc(String gymId, String memberId);
+
     List<Membership> findByGymIdAndStatus(String gymId, String status);
 }

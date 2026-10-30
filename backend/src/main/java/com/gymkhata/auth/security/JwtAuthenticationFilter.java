@@ -36,12 +36,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtService.parse(token);
                 if (jwtService.isAccessToken(claims)) {
-                    userRepository.findById(claims.getSubject()).ifPresent(user -> {
-                        var auth = new UsernamePasswordAuthenticationToken(
-                                user, null,
-                                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
-                        SecurityContextHolder.getContext().setAuthentication(auth);
-                    });
+                    userRepository.findById(claims.getSubject())
+                            .filter(user -> User.STATUS_ACTIVE.equals(user.getStatus()))
+                            .ifPresent(user -> {
+                                var auth = new UsernamePasswordAuthenticationToken(
+                                        user, null,
+                                        List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
+                                SecurityContextHolder.getContext().setAuthentication(auth);
+                            });
                 }
             } catch (Exception e) {
                 SecurityContextHolder.clearContext();

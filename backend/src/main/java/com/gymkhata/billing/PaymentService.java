@@ -9,10 +9,10 @@ import com.gymkhata.common.audit.AuditService;
 import com.gymkhata.common.clock.Clock;
 import com.gymkhata.common.error.BusinessException;
 import com.gymkhata.domain.UpiUtils;
+import com.gymkhata.pt.CommissionService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -20,15 +20,18 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
+    private final CommissionService commissionService;
     private final Clock clock;
     private final AuditService auditService;
 
     public PaymentService(PaymentRepository paymentRepository,
                           InvoiceRepository invoiceRepository,
+                          CommissionService commissionService,
                           Clock clock,
                           AuditService auditService) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
+        this.commissionService = commissionService;
         this.clock = clock;
         this.auditService = auditService;
     }
@@ -44,12 +47,20 @@ public class PaymentService {
         Invoice inv = invoiceRepository.findById(invoiceId)
                 .filter(i -> gymId.equals(i.getGymId()))
                 .orElseThrow(() -> BusinessException.notFound("INVOICE_NOT_FOUND", "Invoice not found"));
-        return inv.getTotalPaise() - amountPaid(gymId, invoiceId);
+        if (Invoice.STATUS_VOID.equals(inv.getStatus()) || Invoice.TYPE_CREDIT_NOTE.equals(inv.getType())) {
+            return 0L;
+        }
+        long creditedPaise = invoiceRepository.findByGymIdAndOriginalInvoiceId(gymId, invoiceId).stream()
+                .filter(cn -> Invoice.TYPE_CREDIT_NOTE.equals(cn.getType()) && !Invoice.STATUS_VOID.equals(cn.getStatus()))
+                .mapToLong(cn -> Math.abs(cn.getTotalPaise()))
+                .sum();
+        return Math.max(0L, inv.getTotalPaise() - creditedPaise - amountPaid(gymId, invoiceId));
     }
 
     /**
      * Owner records cash/card at the counter: confirmed immediately.
      * Partial payments allowed; overpayment rejected.
+     * Automatically triggers proportional commission accrual if applicable.
      */
     public Payment recordCounterPayment(String invoiceId, long amountPaise, String method) {
         if (!Payment.METHOD_CASH.equals(method) && !Payment.METHOD_CARD.equals(method)) {
@@ -65,6 +76,7 @@ public class PaymentService {
         if (amountPaise <= 0) {
             throw BusinessException.badRequest("INVALID_AMOUNT", "Amount must be > 0");
         }
+        long previousPaid = amountPaid(gymId, invoiceId);
         long balance = balanceDue(gymId, invoiceId);
         if (amountPaise > balance) {
             throw BusinessException.badRequest("OVERPAYMENT",
@@ -81,6 +93,9 @@ public class PaymentService {
         p.setConfirmedAt(clock.now());
         p.setCreatedAt(clock.now());
         Payment saved = paymentRepository.save(p);
+
+        commissionService.onPaymentConfirmed(inv, saved, previousPaid);
+
         auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "PAYMENT_RECORDED", "payment",
                 saved.getId(), method + " " + amountPaise + " invoice=" + inv.getInvoiceNumber());
         return saved;
@@ -138,11 +153,36 @@ public class PaymentService {
         if (!Payment.STATUS_PENDING.equals(p.getStatus())) {
             throw BusinessException.badRequest("NOT_PENDING", "Payment is not pending verification");
         }
+        long previousPaid = amountPaid(gymId, p.getInvoiceId());
         p.setStatus(Payment.STATUS_CONFIRMED);
         p.setConfirmedAt(clock.now());
         Payment saved = paymentRepository.save(p);
+
+        Invoice inv = invoiceRepository.findById(p.getInvoiceId()).orElse(null);
+        if (inv != null) {
+            commissionService.onPaymentConfirmed(inv, saved, previousPaid);
+        }
+
         auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "PAYMENT_CONFIRMED", "payment",
                 saved.getId(), "utr=" + p.getUtr());
+        return saved;
+    }
+
+    /** Owner rejects an invalid or unverified member-submitted UPI UTR. */
+    public Payment rejectUpi(String paymentId, String reason) {
+        String gymId = SecurityUtils.currentGymId();
+        Payment p = paymentRepository.findById(paymentId)
+                .filter(x -> gymId.equals(x.getGymId()))
+                .orElseThrow(() -> BusinessException.notFound("PAYMENT_NOT_FOUND", "Payment not found"));
+        if (!Payment.STATUS_PENDING.equals(p.getStatus())) {
+            throw BusinessException.badRequest("NOT_PENDING", "Payment is not pending verification");
+        }
+        p.setStatus(Payment.STATUS_FAILED);
+        p.setConfirmedAt(clock.now());
+        Payment saved = paymentRepository.save(p);
+        String detail = "utr=" + p.getUtr() + (reason != null && !reason.isBlank() ? " reason=" + reason.trim() : "");
+        auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "PAYMENT_REJECTED", "payment",
+                saved.getId(), detail);
         return saved;
     }
 

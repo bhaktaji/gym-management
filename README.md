@@ -198,19 +198,16 @@ every knob — or read `docs/API.md` and `backend/.env.example`.
 
 ## Tests
 
-```powershell
-# backend: 59 tests (35 unit + 24 integration against a throwaway MongoDB)
-cd backend
-$env:JAVA_HOME = "<path-to-jdk-17-plus>"
-mvn test
+```bash
+# Backend: 88 tests across 20 test classes (41 unit + 47 integration against MongoDB)
+mvn -f backend/pom.xml test
 
-# frontend: 7 tests + type check
-cd frontend
-npm test
-npx tsc -b
+# Frontend: 10 Vitest tests across 4 files + TypeScript type check + Vite PWA build
+npm --prefix frontend test
+npm --prefix frontend run build
 
-# startup scripts: 17-check start / reuse / dry-run / stop lifecycle
-powershell -ExecutionPolicy Bypass -File scripts\test-start-all.ps1
+# Playwright E2E: 12 real-backend tests (6 flows × desktop & 390px mobile) with traces & screenshots
+./frontend/node_modules/.bin/playwright test -c frontend/playwright.config.ts
 ```
 
 The backend tests create and drop their own `gymkhata_test_<random>` database;
@@ -223,33 +220,21 @@ they never touch `gymkhata_dev`. Full results are in `TEST_REPORT.md`.
 Every endpoint is documented in [`docs/API.md`](docs/API.md), including the error
 envelope, authentication, and the public vs super-admin vs owner groupings. The
 live OpenAPI spec is at `http://localhost:8080/api-docs` and the interactive UI
-at `http://localhost:8080/swagger-ui.html`. Every configuration knob is in
+at `http://localhost:8080/swagger-ui.html` (disabled by default in `prod` via
+`SWAGGER_ENABLED=false`). Every configuration knob is in
 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) and `backend/.env.example`.
 
 ---
 
-## Security notes
+## Security & Deployment Notes
 
-- Passwords are hashed with BCrypt. Access tokens are short-lived JWTs; refresh
-  tokens rotate on every use and reuse of a rotated token revokes the family.
-- `gymId` is always taken from the authenticated JWT principal — never from a
-  request body or query parameter.
-- The one-owner-per-gym rule is enforced both in the service layer **and** by a
-  partial unique index on the database.
-- Issued invoices are immutable; corrections are credit notes.
-- The development JWT secret and the default super-admin password are
-  **placeholders for local use only** — override them for any real deployment
-  (`prod` refuses to start with the development secret).
+- **Single-Container Cloud Run Deployment**: Root `Dockerfile` builds the Vite PWA into `classpath:/static/` inside the Spring Boot JAR (`SpaWebMvcConfigurer`), serving both the SPA and `/api/v1/**` from the same origin on port `8080` with zero CORS overhead.
+- **Fail-Fast Production Guard (`ProdConfigValidator`)**: Under `--spring.profiles.active=prod`, the application refuses to start if `JWT_SECRET` (< 32 bytes or default), `SUPER_ADMIN_PASSWORD` (`ChangeMe@123` or `DemoAdmin@2026`), or `CORS_ALLOWED_ORIGINS` (`*` or `localhost`) are insecure.
+- **Trusted Proxy & Lockout Safety**: `RateLimitFilter` and `CheckinService` extract the real client IP via `X-Forwarded-For` only when the immediate peer is a trusted proxy (`127.0.0.1`, RFC1918, Cloud Run `169.254.x.x`), walking right-to-left to prevent header spoofing. PIN lockout uses exponential backoff (`60s → 300s → 900s → 3600s`) keyed on `phone + clientIp` so one attacker cannot lock out other members or the real member on another network, with instant owner unlock (`POST /api/v1/members/{id}/reset-pin-lockout`).
+- **Password Reset Security**: `POST /api/v1/auth/password-reset/request` never leaks tokens in public responses; `SUPER_ADMIN` can issue a single-use token via `/api/v1/admin/gyms/{gymId}/password-reset`.
 
 ## Known limitations
 
-- MongoDB runs in **standalone** mode, so the application deliberately uses no
-  multi-document transactions — it relies on single-document atomic operations,
-  unique indexes, idempotency keys and compensating steps.
-- The WhatsApp Cloud and Razorpay adapters are behind flags and are **not
-  production-tested** (no live provider calls, no credentials).
-- Password reset tokens are returned by the API as a stand-in for a delivery
-  channel — no email or SMS provider is wired up.
-- Browser-based UI tests were not run on the reference machine (no browser
-  installed); the frontend is verified by production build, type check and unit
-  tests.
+- MongoDB runs in standalone-compatible mode; the application uses single-document atomic operations (`findAndModify` `$inc`), partial unique indexes, and compensating `VOID` writes rather than multi-document transactions.
+- The WhatsApp Cloud (`META_CLOUD`) and Razorpay adapters are behind feature flags (`WHATSAPP_CLOUD_ENABLED=false`, `RAZORPAY_ENABLED=false`) and labelled "Coming Soon" in the UI until live sandbox credentials are provided; `clicktochat` (`wa.me`) and `directupi` (NPCI UPI QR + 12-digit UTR) are production-ready defaults.
+

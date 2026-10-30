@@ -10,7 +10,6 @@ import jakarta.validation.constraints.Positive;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/payments")
@@ -27,7 +26,7 @@ public class PaymentController {
                                        @NotBlank String method) {
     }
 
-    public record ConfirmRequest(@NotBlank String paymentId) {
+    public record RejectRequest(String reason) {
     }
 
     @PostMapping("/counter")
@@ -40,6 +39,12 @@ public class PaymentController {
     @Operation(summary = "Confirm a member-submitted UPI payment")
     public Payment confirm(@PathVariable String id) {
         return paymentService.confirmUpi(id);
+    }
+
+    @PostMapping("/{id}/reject")
+    @Operation(summary = "Reject an invalid or unverified member-submitted UPI payment")
+    public Payment reject(@PathVariable String id, @RequestBody(required = false) RejectRequest req) {
+        return paymentService.rejectUpi(id, req == null ? null : req.reason());
     }
 
     @GetMapping("/pending")

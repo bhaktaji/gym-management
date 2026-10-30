@@ -10,7 +10,6 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/plans")
@@ -24,10 +23,10 @@ public class PlanController {
     }
 
     public record PlanRequest(@NotBlank String name, @NotNull @Min(1) int durationDays,
-                             @NotNull @Min(0) long pricePaise) {
+                             @NotNull @Min(0) long pricePaise, Long joiningFeePaise) {
     }
 
-    public record PlanUpdateRequest(String name, Integer durationDays, Long pricePaise, Boolean active) {
+    public record PlanUpdateRequest(String name, Integer durationDays, Long pricePaise, Long joiningFeePaise, Boolean active) {
     }
 
     @GetMapping
@@ -39,13 +38,14 @@ public class PlanController {
     @PostMapping
     @Operation(summary = "Create a plan")
     public Plan create(@Valid @RequestBody PlanRequest req) {
-        return planService.create(req.name(), req.durationDays(), req.pricePaise());
+        return planService.create(req.name(), req.durationDays(), req.pricePaise(),
+                req.joiningFeePaise() == null ? 0L : req.joiningFeePaise());
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Update a plan")
     public Plan update(@PathVariable String id, @RequestBody PlanUpdateRequest req) {
-        return planService.update(id, req.name(), req.durationDays(), req.pricePaise(), req.active());
+        return planService.update(id, req.name(), req.durationDays(), req.pricePaise(), req.joiningFeePaise(), req.active());
     }
 
     @GetMapping("/{id}")

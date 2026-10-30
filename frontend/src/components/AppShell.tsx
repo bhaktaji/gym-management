@@ -1,20 +1,41 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
+import { api } from '../lib/api'
 import { LanguageToggle } from './LanguageToggle'
 
-const ownerLinks = [
-  { to: '/app', label: 'home', end: true },
-  { to: '/app/members', label: 'members' },
-  { to: '/app/billing', label: 'billing' },
-  { to: '/app/checkins', label: 'checkins' },
-  { to: '/app/messages', label: 'messages' },
-]
+type GymInfo = {
+  id: string
+  name: string
+  slug?: string
+  settings?: {
+    attendanceEnabled?: boolean
+  }
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+
+  const gym = useQuery({
+    queryKey: ['gym'],
+    queryFn: () => api<GymInfo>('/api/v1/tenant/gym'),
+    enabled: Boolean(user && user.role !== 'SUPER_ADMIN'),
+  })
+
+  const attendanceEnabled = Boolean(gym.data?.settings?.attendanceEnabled)
+
+  const ownerLinks = [
+    { to: '/app', label: 'home', end: true },
+    { to: '/app/members', label: 'members' },
+    { to: '/app/billing', label: 'billing' },
+    { to: '/app/pt', label: 'pt' },
+    ...(attendanceEnabled
+      ? [{ to: '/app/checkins', label: 'checkins' }]
+      : [{ to: '/app/messages', label: 'messages' }]),
+  ]
 
   return (
     <div className="min-h-screen pb-20">
@@ -46,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="max-w-5xl mx-auto px-4 py-4">{children}</main>
 
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 safe-bottom z-30">
-        <div className="max-w-5xl mx-auto grid grid-cols-5">
+        <div className="max-w-5xl mx-auto grid grid-cols-6">
           {ownerLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -87,6 +108,8 @@ function icon(label: string): string {
       return '👥'
     case 'billing':
       return '₹'
+    case 'pt':
+      return '🏋️'
     case 'checkins':
       return '✓'
     case 'messages':

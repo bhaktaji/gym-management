@@ -15,6 +15,9 @@ import java.util.Map;
 public class OutboxMessage {
 
     public static final String TYPE_RENEWAL_REMINDER = "RENEWAL_REMINDER";
+    public static final String TYPE_WE_MISSED_YOU = "WE_MISSED_YOU";
+    public static final String TYPE_ALERT = "ALERT";
+    public static final String TYPE_CUSTOM = "CUSTOM";
 
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_QUIET_HOURS = "QUIET_HOURS";

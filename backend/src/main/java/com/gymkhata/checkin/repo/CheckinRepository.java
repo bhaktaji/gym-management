@@ -13,5 +13,11 @@ public interface CheckinRepository extends MongoRepository<Checkin, String> {
 
     Optional<Checkin> findByGymIdAndMemberIdAndDateAndCheckOutAtIsNull(String gymId, String memberId, LocalDate date);
 
+    List<Checkin> findByGymIdAndMemberIdAndDateOrderByCheckInAtDesc(String gymId, String memberId, LocalDate date);
+
     List<Checkin> findByGymIdAndMemberIdOrderByCheckInAtDesc(String gymId, String memberId);
+
+    List<Checkin> findByGymIdAndCheckOutAtIsNull(String gymId);
+
+    Checkin findFirstByGymIdAndMemberIdOrderByCheckInAtDesc(String gymId, String memberId);
 }

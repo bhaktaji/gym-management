@@ -30,20 +30,10 @@ public class TenantController {
         return tenantService.planUsage();
     }
 
-    public record SettingsRequest(String upiVpa, String upiName, Boolean quietHoursEnabled,
-                                 Map<String, String> templatesEn, Map<String, String> templatesHi) {
-    }
-
     @PutMapping("/settings")
-    @Operation(summary = "Update gym settings (UPI, WhatsApp templates, quiet hours)")
-    public Gym updateSettings(@RequestBody SettingsRequest req) {
-        Gym.Settings s = new Gym.Settings();
-        s.setUpiVpa(req.upiVpa());
-        s.setUpiName(req.upiName());
-        s.setQuietHoursEnabled(req.quietHoursEnabled() == null || req.quietHoursEnabled());
-        s.setTemplatesEn(req.templatesEn() == null ? Map.of() : req.templatesEn());
-        s.setTemplatesHi(req.templatesHi() == null ? Map.of() : req.templatesHi());
-        return tenantService.updateSettings(s);
+    @Operation(summary = "Update gym settings (UPI, WhatsApp templates, quiet hours, attendance, PT & commission)")
+    public Gym updateSettings(@RequestBody Gym.Settings req) {
+        return tenantService.updateSettings(req);
     }
 
     public record ProfileRequest(String name, String phone, String email, String address,

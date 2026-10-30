@@ -90,7 +90,7 @@ export function Messaging() {
       )}
 
       <Card className="mt-4">
-        <p className="text-xs text-slate-500">{t('messaging.opedOut')}</p>
+        <p className="text-xs text-slate-500">{t('messaging.optedOut')}</p>
       </Card>
     </div>
   )

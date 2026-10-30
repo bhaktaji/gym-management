@@ -9,6 +9,7 @@ import com.gymkhata.auth.repo.PasswordResetTokenRepository;
 import com.gymkhata.auth.repo.RefreshTokenRepository;
 import com.gymkhata.auth.repo.UserRepository;
 import com.gymkhata.auth.security.JwtService;
+import com.gymkhata.common.audit.AuditService;
 import com.gymkhata.common.clock.Clock;
 import com.gymkhata.common.error.BusinessException;
 import com.gymkhata.domain.PhoneUtils;
@@ -16,11 +17,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -34,9 +34,10 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final Clock clock;
+    private final AuditService auditService;
+    private final com.gymkhata.common.notification.EmailAdapter emailAdapter;
     private final Duration refreshTtl;
     private final Duration resetTtl;
-    private final SecureRandom random = new SecureRandom();
 
     public AuthService(UserRepository userRepository,
                        GymRepository gymRepository,
@@ -45,6 +46,9 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        Clock clock,
+                       AuditService auditService,
+                       @org.springframework.beans.factory.annotation.Autowired(required = false)
+                       com.gymkhata.common.notification.EmailAdapter emailAdapter,
                        @Value("${app.jwt.refresh-token-ttl-days}") long refreshTtlDays,
                        @Value("${app.security.password-reset-ttl-minutes}") long resetTtlMinutes) {
         this.userRepository = userRepository;
@@ -54,6 +58,8 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.clock = clock;
+        this.auditService = auditService;
+        this.emailAdapter = emailAdapter;
         this.refreshTtl = Duration.ofDays(refreshTtlDays);
         this.resetTtl = Duration.ofMinutes(resetTtlMinutes);
     }
@@ -82,7 +88,7 @@ public class AuthService {
         }
         user.setLastLoginAt(clock.now());
         userRepository.save(user);
-        return issueTokens(user);
+        return issueTokens(user, UUID.randomUUID().toString());
     }
 
     public TokenPair refresh(String refreshToken) {
@@ -93,11 +99,13 @@ public class AuthService {
         RefreshToken stored = refreshTokenRepository.findByTokenHash(hash)
                 .orElseThrow(() -> BusinessException.forbidden("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
         if (stored.getRevokedAt() != null) {
-            // reuse of a rotated token: revoke the whole family
+            // Reuse of a rotated token: revoke the whole token family
             refreshTokenRepository.findByFamilyId(stored.getFamilyId())
                     .forEach(t -> {
-                        t.setRevokedAt(clock.now());
-                        refreshTokenRepository.save(t);
+                        if (t.getRevokedAt() == null) {
+                            t.setRevokedAt(clock.now());
+                            refreshTokenRepository.save(t);
+                        }
                     });
             throw BusinessException.forbidden("REFRESH_REUSE_DETECTED", "Session revoked. Please log in again.");
         }
@@ -115,22 +123,27 @@ public class AuthService {
                 throw BusinessException.forbidden("ACCOUNT_SUSPENDED", "This gym account is suspended");
             }
         }
-        // rotation: revoke old, issue new
+        // Rotation: revoke old token and issue new token in the SAME familyId
         stored.setRevokedAt(clock.now());
         refreshTokenRepository.save(stored);
-        TokenPair pair = issueTokens(user);
+        String familyId = stored.getFamilyId() != null ? stored.getFamilyId() : UUID.randomUUID().toString();
+        TokenPair pair = issueTokens(user, familyId);
         stored.setReplacedBy(sha256(pair.refreshToken()));
         refreshTokenRepository.save(stored);
         return pair;
     }
 
     public TokenPair issueTokens(User user) {
+        return issueTokens(user, UUID.randomUUID().toString());
+    }
+
+    public TokenPair issueTokens(User user, String familyId) {
         String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole(), user.getGymId());
         String raw = UUID.randomUUID().toString() + UUID.randomUUID().toString();
         RefreshToken rt = new RefreshToken();
         rt.setUserId(user.getId());
         rt.setTokenHash(sha256(raw));
-        rt.setFamilyId(UUID.randomUUID().toString());
+        rt.setFamilyId(familyId != null ? familyId : UUID.randomUUID().toString());
         rt.setExpiresAt(clock.now().plus(refreshTtl));
         rt.setCreatedAt(clock.now());
         refreshTokenRepository.save(rt);
@@ -138,16 +151,21 @@ public class AuthService {
     }
 
     public void logout(String userId) {
-        refreshTokenRepository.deleteByUserId(userId);
+        if (userId != null) {
+            refreshTokenRepository.deleteByUserId(userId);
+        }
     }
 
     public String createPasswordResetToken(String phone) {
         String e164 = PhoneUtils.normalize(phone);
         User user = e164 == null ? null : userRepository.findByPhone(e164).orElse(null);
         if (user == null) {
-            // do not reveal whether the phone exists
+            // Do not reveal whether the phone exists
             return null;
         }
+        // Invalidate any previous unused reset tokens for this user
+        passwordResetTokenRepository.deleteByUserId(user.getId());
+
         String raw = UUID.randomUUID().toString();
         PasswordResetToken token = new PasswordResetToken();
         token.setUserId(user.getId());
@@ -155,6 +173,13 @@ public class AuthService {
         token.setExpiresAt(clock.now().plus(resetTtl));
         token.setCreatedAt(clock.now());
         passwordResetTokenRepository.save(token);
+
+        if (emailAdapter != null && user.getEmail() != null && !user.getEmail().isBlank()) {
+            emailAdapter.sendPasswordResetEmail(user.getEmail(), user.getName(), raw);
+        }
+
+        auditService.log(user.getGymId(), user.getId(), user.getRole(), "PASSWORD_RESET_REQUESTED",
+                "user", user.getId(), "phone=" + PhoneUtils.mask(e164));
         return raw;
     }
 
@@ -173,16 +198,36 @@ public class AuthService {
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(() -> BusinessException.forbidden("INVALID_RESET_TOKEN", "User not found"));
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setUpdatedAt(clock.now());
         userRepository.save(user);
         token.setUsedAt(clock.now());
         passwordResetTokenRepository.save(token);
         refreshTokenRepository.deleteByUserId(user.getId());
+        auditService.log(user.getGymId(), user.getId(), user.getRole(), "PASSWORD_RESET_COMPLETED",
+                "user", user.getId(), null);
+    }
+
+    public void changePassword(String userId, String currentPassword, String newPassword) {
+        if (newPassword == null || newPassword.length() < 8) {
+            throw BusinessException.badRequest("WEAK_PASSWORD", "Password must be at least 8 characters");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> BusinessException.notFound("USER_NOT_FOUND", "User not found"));
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw BusinessException.forbidden("INVALID_CREDENTIALS", "Current password is incorrect");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setUpdatedAt(clock.now());
+        userRepository.save(user);
+        refreshTokenRepository.deleteByUserId(user.getId());
+        auditService.log(user.getGymId(), user.getId(), user.getRole(), "PASSWORD_CHANGED",
+                "user", user.getId(), null);
     }
 
     private String sha256(String raw) {
         try {
             return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(raw.getBytes()));
+                    MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

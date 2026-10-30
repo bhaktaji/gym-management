@@ -17,6 +17,10 @@ public class BusinessException extends RuntimeException {
         return new BusinessException(HttpStatus.BAD_REQUEST.value(), code, message);
     }
 
+    public static BusinessException unauthorized(String code, String message) {
+        return new BusinessException(HttpStatus.UNAUTHORIZED.value(), code, message);
+    }
+
     public static BusinessException notFound(String code, String message) {
         return new BusinessException(HttpStatus.NOT_FOUND.value(), code, message);
     }
@@ -27,6 +31,10 @@ public class BusinessException extends RuntimeException {
 
     public static BusinessException forbidden(String code, String message) {
         return new BusinessException(HttpStatus.FORBIDDEN.value(), code, message);
+    }
+
+    public static BusinessException tooManyRequests(String code, String message) {
+        return new BusinessException(HttpStatus.TOO_MANY_REQUESTS.value(), code, message);
     }
 
     public int getStatus() {

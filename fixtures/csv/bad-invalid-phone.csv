@@ -1,0 +1,4 @@
+name,phone,email,gender,notes
+"Invalid Short Phone",12345,short@demo.gymkhata.in,MALE,"Too short"
+"Invalid Starting Digit",+915555512345,five@demo.gymkhata.in,FEMALE,"Starts with 5"
+"Alphabetic Phone",98765ABCDE,alpha@demo.gymkhata.in,MALE,"Contains letters"

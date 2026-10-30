@@ -7,12 +7,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * A membership enrolment: member + plan -> dated membership with snapshotted price.
+ * A membership enrolment: member + plan -> dated membership with snapshotted price,
+ * optional joining fee, discount, freeze/pause tracking, and optional referral trainer.
  */
 @Document("memberships")
 public class Membership {
 
     public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_FROZEN = "FROZEN";
     public static final String STATUS_EXPIRED = "EXPIRED";
     public static final String STATUS_CANCELLED = "CANCELLED";
 
@@ -25,7 +27,13 @@ public class Membership {
     private LocalDate startDate;
     private LocalDate expiryDate;
     private long pricePaise;
+    private long joiningFeePaise;
+    private long discountPaise;
     private String status;
+    private LocalDate frozenAt;
+    private int totalFrozenDays;
+    private String freezeReason;
+    private String referralTrainerId;
     private Instant createdAt;
 
     public String getId() {
@@ -92,12 +100,60 @@ public class Membership {
         this.pricePaise = pricePaise;
     }
 
+    public long getJoiningFeePaise() {
+        return joiningFeePaise;
+    }
+
+    public void setJoiningFeePaise(long joiningFeePaise) {
+        this.joiningFeePaise = joiningFeePaise;
+    }
+
+    public long getDiscountPaise() {
+        return discountPaise;
+    }
+
+    public void setDiscountPaise(long discountPaise) {
+        this.discountPaise = discountPaise;
+    }
+
     public String getStatus() {
         return status;
     }
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public LocalDate getFrozenAt() {
+        return frozenAt;
+    }
+
+    public void setFrozenAt(LocalDate frozenAt) {
+        this.frozenAt = frozenAt;
+    }
+
+    public int getTotalFrozenDays() {
+        return totalFrozenDays;
+    }
+
+    public void setTotalFrozenDays(int totalFrozenDays) {
+        this.totalFrozenDays = totalFrozenDays;
+    }
+
+    public String getFreezeReason() {
+        return freezeReason;
+    }
+
+    public void setFreezeReason(String freezeReason) {
+        this.freezeReason = freezeReason;
+    }
+
+    public String getReferralTrainerId() {
+        return referralTrainerId;
+    }
+
+    public void setReferralTrainerId(String referralTrainerId) {
+        this.referralTrainerId = referralTrainerId;
     }
 
     public Instant getCreatedAt() {

@@ -30,8 +30,13 @@ public class Invoice {
     private String type;
     private String memberId;
     private String membershipId;
+    private String ptEnrolmentId;
+    private String trainerId;
+    private String originalInvoiceId;
     private List<Line> lines;
     private long totalPaise;
+    private long joiningFeePaise;
+    private long discountPaise;
     private String amountInWords;
     private String status;
     private String voidReason;
@@ -99,6 +104,30 @@ public class Invoice {
         this.membershipId = membershipId;
     }
 
+    public String getPtEnrolmentId() {
+        return ptEnrolmentId;
+    }
+
+    public void setPtEnrolmentId(String ptEnrolmentId) {
+        this.ptEnrolmentId = ptEnrolmentId;
+    }
+
+    public String getTrainerId() {
+        return trainerId;
+    }
+
+    public void setTrainerId(String trainerId) {
+        this.trainerId = trainerId;
+    }
+
+    public String getOriginalInvoiceId() {
+        return originalInvoiceId;
+    }
+
+    public void setOriginalInvoiceId(String originalInvoiceId) {
+        this.originalInvoiceId = originalInvoiceId;
+    }
+
     public List<Line> getLines() {
         return lines;
     }
@@ -113,6 +142,22 @@ public class Invoice {
 
     public void setTotalPaise(long totalPaise) {
         this.totalPaise = totalPaise;
+    }
+
+    public long getJoiningFeePaise() {
+        return joiningFeePaise;
+    }
+
+    public void setJoiningFeePaise(long joiningFeePaise) {
+        this.joiningFeePaise = joiningFeePaise;
+    }
+
+    public long getDiscountPaise() {
+        return discountPaise;
+    }
+
+    public void setDiscountPaise(long discountPaise) {
+        this.discountPaise = discountPaise;
     }
 
     public String getAmountInWords() {
@@ -193,6 +238,16 @@ public class Invoice {
 
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+    }
+
+    /**
+     * Total taxable value across all lines (excluding GST).
+     */
+    public long totalTaxablePaise() {
+        if (lines == null || lines.isEmpty()) {
+            return totalPaise;
+        }
+        return lines.stream().mapToLong(Line::getTaxablePaise).sum();
     }
 
     /**

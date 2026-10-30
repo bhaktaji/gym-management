@@ -2,7 +2,6 @@ package com.gymkhata.auth;
 
 import com.gymkhata.auth.model.User;
 import com.gymkhata.auth.security.SecurityUtils;
-import com.gymkhata.common.error.BusinessException;
 import com.gymkhata.domain.PhoneUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +35,9 @@ public class AuthController {
     }
 
     public record ResetConfirmRequest(@NotBlank String token, @NotBlank @Size(min = 8) String newPassword) {
+    }
+
+    public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8) String newPassword) {
     }
 
     public record AuthResponse(String accessToken, String refreshToken, Map<String, Object> user) {
@@ -74,19 +76,26 @@ public class AuthController {
     }
 
     @PostMapping("/password-reset/request")
-    @Operation(summary = "Request a password reset token (returned here as stand-in for delivery channel)")
+    @Operation(summary = "Request a password reset (never returns plaintext reset token in API response)")
     public Map<String, String> requestReset(@Valid @RequestBody ResetRequest req) {
-        String token = authService.createPasswordResetToken(req.phone());
-        if (token == null) {
-            return Map.of("status", "if_exists_token_would_be_sent");
-        }
-        return Map.of("status", "reset_token_issued", "resetToken", token);
+        authService.createPasswordResetToken(req.phone());
+        return Map.of(
+                "status", "reset_requested",
+                "message", "If an account exists for this number, a password reset request has been logged. Please contact your platform administrator to complete verification."
+        );
     }
 
     @PostMapping("/password-reset/confirm")
-    @Operation(summary = "Set a new password with a reset token")
+    @Operation(summary = "Set a new password with an out-of-band reset token")
     public Map<String, String> confirmReset(@Valid @RequestBody ResetConfirmRequest req) {
         authService.resetPassword(req.token(), req.newPassword());
+        return Map.of("status", "password_updated");
+    }
+
+    @PostMapping("/change-password")
+    @Operation(summary = "Authenticated user changes their own password")
+    public Map<String, String> changePassword(@Valid @RequestBody ChangePasswordRequest req) {
+        authService.changePassword(SecurityUtils.currentUserId(), req.currentPassword(), req.newPassword());
         return Map.of("status", "password_updated");
     }
 

@@ -5,7 +5,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,6 +43,12 @@ public class BillingController {
     @Operation(summary = "List invoices")
     public List<Invoice> list() {
         return billingService.list();
+    }
+
+    @GetMapping("/dues")
+    @Operation(summary = "List outstanding/partially-paid invoices with balance due")
+    public List<Map<String, Object>> dues() {
+        return billingService.listDues();
     }
 
     @GetMapping("/invoices/member/{memberId}")

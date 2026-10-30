@@ -48,4 +48,28 @@ public class ReportController {
     public List<Document> plans() {
         return reportService.membersPerPlan();
     }
+
+    @GetMapping("/pt-revenue")
+    @Operation(summary = "Confirmed Personal Training revenue by month")
+    public List<Document> ptRevenue() {
+        return reportService.ptRevenueByMonth();
+    }
+
+    @GetMapping("/trainer-commissions")
+    @Operation(summary = "Commission payable per trainer (?month=YYYY-MM)")
+    public List<Document> trainerCommissions(@RequestParam(required = false) String month) {
+        return reportService.trainerCommissions(month);
+    }
+
+    @GetMapping("/trainer-collections")
+    @Operation(summary = "Trainer-wise collections")
+    public List<Document> trainerCollections() {
+        return reportService.trainerCollections();
+    }
+
+    @GetMapping("/pt-expiring")
+    @Operation(summary = "PT packages expiring soon (?days=7)")
+    public List<Document> ptExpiring(@RequestParam(defaultValue = "7") int days) {
+        return reportService.expiringPtPackages(days);
+    }
 }

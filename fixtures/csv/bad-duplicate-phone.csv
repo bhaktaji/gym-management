@@ -1,0 +1,3 @@
+name,phone,email,gender,notes
+"First Entry",9876509999,first@demo.gymkhata.in,MALE,"Original row"
+"Duplicate Same Phone",+91-98765-09999,second@demo.gymkhata.in,FEMALE,"Normalized duplicate of first row"

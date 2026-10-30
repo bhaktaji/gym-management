@@ -6,7 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 
 /**
- * Membership plan. pricePaise is GST-inclusive ("all-in").
+ * Membership plan. pricePaise and joiningFeePaise are GST-inclusive ("all-in").
  */
 @Document("plans")
 public class Plan {
@@ -17,6 +17,7 @@ public class Plan {
     private String name;
     private int durationDays;
     private long pricePaise;
+    private long joiningFeePaise;
     private boolean active;
     private Instant createdAt;
     private Instant updatedAt;
@@ -59,6 +60,14 @@ public class Plan {
 
     public void setPricePaise(long pricePaise) {
         this.pricePaise = pricePaise;
+    }
+
+    public long getJoiningFeePaise() {
+        return joiningFeePaise;
+    }
+
+    public void setJoiningFeePaise(long joiningFeePaise) {
+        this.joiningFeePaise = joiningFeePaise;
     }
 
     public boolean isActive() {

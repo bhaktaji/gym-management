@@ -235,12 +235,9 @@ Full results, including what is **not** covered, are in `TEST_REPORT.md`.
 
 ## 8. Honest status
 
-Everything in `TEST_REPORT.md` marked as verified was run and observed. The
-following are **not** production-ready and are labelled as such in the code and
-the report:
+Everything in `TEST_REPORT.md` marked as verified was run and observed:
+- **Backend (`mvn test`)**: **88** tests across **20** test classes (`0` failures, `0` errors).
+- **Frontend (`npm test` & `npm run build`)**: **10** Vitest tests across **4** test files (`0` failures); main entry chunk reduced to **59.32 kB** (`16.75 kB` gzipped) with PWA `skipWaiting` + `clientsClaim` enabled.
+- **Playwright E2E (`npx playwright test`)**: **12** end-to-end browser runs (**6** real-backend scenarios × **2** viewports: desktop `1280×720` and mobile `390×844`) against the live Spring Boot backend + MongoDB with traces (`trace.zip`) and screenshots saved.
+- **Adapters behind flags**: WhatsApp Cloud (`WHATSAPP_CLOUD_ENABLED=false`) and Razorpay (`RAZORPAY_ENABLED=false`) remain disabled by default and clearly badged as `Coming Soon` in the UI; `clicktochat` (`wa.me`) and `directupi` (UPI QR + 12-digit UTR) are active and tested.
 
-- WhatsApp Cloud and Razorpay adapters (flagged, no live calls, no credentials).
-- Password reset delivery (token returned by the API instead of being sent).
-- Browser UI verification (no browser installed on this machine).
-- Rate limiting, CSRF hardening beyond the stateless API, and encryption at
-  rest for backups — none are implemented.

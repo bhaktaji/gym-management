@@ -63,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    const tokens = getTokens()
+    if (tokens?.refreshToken) {
+      void api('/api/v1/auth/logout', {
+        method: 'POST',
+        body: { refreshToken: tokens.refreshToken },
+        auth: false,
+      }).catch(() => {
+        // Ignore network errors on logout
+      })
+    }
     setTokens(null)
     setUser(null)
   }, [])

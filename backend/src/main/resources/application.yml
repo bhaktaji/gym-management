@@ -6,15 +6,28 @@ spring:
       uri: ${MONGODB_URI:mongodb://localhost:27017/gymkhata_dev}
   jackson:
     default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 2MB
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:${PORT:8080}}
+  forward-headers-strategy: framework
+  max-http-request-header-size: 16KB
+  tomcat:
+    max-http-form-post-size: 2MB
+    max-swallow-size: 2MB
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      internal-proxies: "127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|0:0:0:0:0:0:0:1|::1|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3}|169\\.254\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[0-1])\\.\\d{1,3}\\.\\d{1,3}"
 
 app:
   name: GymKhata
   timezone: Asia/Kolkata
   # Origins that may call the API (browser front-ends). Comma separated.
-  cors-allowed-origins: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080"
+  cors-allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}"
   super-admin:
     phone: ${SUPER_ADMIN_PHONE:+919000000001}
     password: ${SUPER_ADMIN_PASSWORD:ChangeMe@123}
@@ -24,7 +37,7 @@ app:
     refresh-token-ttl-days: 30
     issuer: gymkhata
     # override with a long random value in production (app.jwt.secret)
-    secret: "gymkhata-dev-secret-change-me-0123456789abcdef0123456789abcdef"
+    secret: "${JWT_SECRET:gymkhata-dev-secret-change-me-0123456789abcdef0123456789abcdef}"
   signup:
     auto-activate: ${SIGNUP_AUTO_ACTIVATE:false}
   pricing:
@@ -36,6 +49,9 @@ app:
     vpa-regex: "^[a-zA-Z0-9.\\-_]{2,}@[a-zA-Z]{2,}$"
   security:
     password-reset-ttl-minutes: 30
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      requests-per-minute: ${RATE_LIMIT_RPM:60}
   messaging:
     provider: ${MESSAGING_PROVIDER:clicktochat}
     whatsapp-cloud:

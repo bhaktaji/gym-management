@@ -1,0 +1,22 @@
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/gymkhata_demo}
+
+app:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  demo:
+    enabled: true
+    reset: ${DEMO_RESET:false}
+    super-admin-password: ${DEMO_SUPER_ADMIN_PASSWORD:DemoAdmin@2026}
+    owner-password: ${DEMO_OWNER_PASSWORD:DemoOwner@2026}
+  bootstrap:
+    super-admin-phone: ${SUPER_ADMIN_PHONE:+919000000001}
+    super-admin-password: ${DEMO_SUPER_ADMIN_PASSWORD:DemoAdmin@2026}
+    super-admin-name: ${SUPER_ADMIN_NAME:Vikramaditya Rao}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -7,6 +7,7 @@ import com.gymkhata.common.audit.AuditService;
 import com.gymkhata.common.clock.Clock;
 import com.gymkhata.common.error.BusinessException;
 import com.gymkhata.domain.InvoiceNumbering;
+import com.gymkhata.domain.PhoneUtils;
 import com.gymkhata.domain.UpiUtils;
 import com.gymkhata.member.model.Member;
 import com.gymkhata.member.repo.MemberRepository;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class TenantService {
@@ -47,16 +49,33 @@ public class TenantService {
                 .orElseThrow(() -> BusinessException.notFound("GYM_NOT_FOUND", "Gym not found"));
     }
 
-    public Gym updateSettings(Gym.Settings settings) {
+    public Gym updateSettings(Gym.Settings incoming) {
         Gym gym = getGym();
-        if (settings.getUpiVpa() != null && !settings.getUpiVpa().isBlank()
-                && !UpiUtils.isValidVpa(settings.getUpiVpa())) {
+        if (incoming.getUpiVpa() != null && !incoming.getUpiVpa().isBlank()
+                && !UpiUtils.isValidVpa(incoming.getUpiVpa())) {
             throw BusinessException.badRequest("INVALID_VPA", "Enter a valid UPI VPA (e.g. name@okhdfcbank)");
         }
-        gym.setSettings(settings);
+        Gym.Settings existing = gym.getSettings();
+        if (incoming.getTemplatesEn() == null) {
+            incoming.setTemplatesEn(existing.getTemplatesEn() != null ? existing.getTemplatesEn() : Map.of());
+        }
+        if (incoming.getTemplatesHi() == null) {
+            incoming.setTemplatesHi(existing.getTemplatesHi() != null ? existing.getTemplatesHi() : Map.of());
+        }
+        if (incoming.getRotatingTokenSecret() == null || incoming.getRotatingTokenSecret().isBlank()) {
+            String prevSecret = existing.getRotatingTokenSecret();
+            incoming.setRotatingTokenSecret(prevSecret != null && !prevSecret.isBlank()
+                    ? prevSecret
+                    : UUID.randomUUID().toString().replace("-", ""));
+        }
+        if (gym.getSlug() == null || gym.getSlug().isBlank()) {
+            gym.setSlug(gym.getCode());
+        }
+        gym.setSettings(incoming);
         gym.setUpdatedAt(clock.now());
         Gym saved = gymRepository.save(gym);
-        auditService.log(gym.getId(), SecurityUtils.currentUserId(), "GYM_OWNER", "SETTINGS_UPDATED", "gym", gym.getId(), null);
+        auditService.log(gym.getId(), SecurityUtils.currentUserId(), "GYM_OWNER", "SETTINGS_UPDATED", "gym", gym.getId(),
+                "attendanceEnabled=" + incoming.isAttendanceEnabled());
         return saved;
     }
 
@@ -66,8 +85,31 @@ public class TenantService {
         if (name != null && !name.isBlank()) {
             gym.setName(name.trim());
         }
+        if (phone != null) {
+            if (phone.isBlank()) {
+                gym.setPhone(null);
+            } else {
+                String e164 = PhoneUtils.normalize(phone);
+                if (e164 == null) {
+                    throw BusinessException.badRequest("INVALID_PHONE", "Enter a valid 10-digit Indian mobile number");
+                }
+                gym.setPhone(e164);
+            }
+        }
+        if (email != null) {
+            gym.setEmail(email.isBlank() ? null : email.trim());
+        }
+        if (address != null) {
+            gym.setAddress(address.isBlank() ? null : address.trim());
+        }
+        if (city != null) {
+            gym.setCity(city.isBlank() ? null : city.trim());
+        }
+        if (state != null && !state.isBlank()) {
+            gym.setState(state.trim());
+        }
         if (gstin != null) {
-            gym.setGstin(gstin.isBlank() ? null : gstin.toUpperCase());
+            gym.setGstin(gstin.isBlank() ? null : gstin.trim().toUpperCase());
         }
         if (gstRegistered != null) {
             gym.setGstRegistered(gstRegistered);
@@ -76,7 +118,9 @@ public class TenantService {
             gym.setInvoicePrefix(InvoiceNumbering.normalizePrefix(invoicePrefix));
         }
         gym.setUpdatedAt(clock.now());
-        return gymRepository.save(gym);
+        Gym saved = gymRepository.save(gym);
+        auditService.log(gym.getId(), SecurityUtils.currentUserId(), "GYM_OWNER", "PROFILE_UPDATED", "gym", gym.getId(), null);
+        return saved;
     }
 
     /**

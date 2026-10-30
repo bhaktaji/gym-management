@@ -47,3 +47,15 @@ export function toLocalDateInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+export function paiseToRupeesString(paise: number | null | undefined): string {
+  if (paise == null) return ''
+  return (paise / 100).toFixed(2)
+}
+
+export function rupeesToPaise(rupees: number | string | null | undefined): number {
+  if (rupees == null || rupees === '') return 0
+  const n = typeof rupees === 'string' ? parseFloat(rupees) : rupees
+  return Math.round(n * 100)
+}
+

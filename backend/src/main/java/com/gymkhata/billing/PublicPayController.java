@@ -1,15 +1,15 @@
 package com.gymkhata.billing;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
 import com.gymkhata.admin.model.Gym;
 import com.gymkhata.admin.repo.GymRepository;
 import com.gymkhata.billing.model.Invoice;
 import com.gymkhata.billing.model.Payment;
 import com.gymkhata.domain.Money;
 import com.gymkhata.domain.UpiUtils;
-import com.google.zxing.BarcodeFormat;
-import com.google.zxing.client.j2se.MatrixToImageWriter;
-import com.google.zxing.common.BitMatrix;
-import com.google.zxing.qrcode.QRCodeWriter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -20,11 +20,12 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.ByteArrayOutputStream;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Public tokenized pay page API. The member opens /pay/{token}, sees the amount
- * and a UPI deep link + QR, pays from any UPI app, and submits the 12-digit UTR.
+ * Public tokenized pay page API. The member opens /pay/{token}, sees the remaining
+ * balance due and a UPI deep link + QR, pays from any UPI app, and submits the 12-digit UTR.
  */
 @RestController
 @RequestMapping("/api/v1/pay")
@@ -45,23 +46,45 @@ public class PublicPayController {
     }
 
     @GetMapping("/{token}")
-    @Operation(summary = "Public pay page: invoice details + UPI deep link")
+    @Operation(summary = "Public pay page: invoice details + remaining balance due + UPI deep link")
     public Map<String, Object> payPage(@PathVariable String token) {
         Invoice inv = billingService.getByPayToken(token);
         Gym gym = gymRepository.findById(inv.getGymId()).orElse(null);
+        long balancePaise = Invoice.STATUS_VOID.equals(inv.getStatus())
+                ? 0L
+                : paymentService.balanceDue(inv.getGymId(), inv.getId());
+        long paidPaise = Math.max(0L, inv.getTotalPaise() - balancePaise);
+
+        String effectiveStatus;
+        if (Invoice.STATUS_VOID.equals(inv.getStatus())) {
+            effectiveStatus = Invoice.STATUS_VOID;
+        } else if (balancePaise <= 0L) {
+            effectiveStatus = "PAID";
+        } else if (paidPaise > 0L) {
+            effectiveStatus = "PARTIAL";
+        } else {
+            effectiveStatus = Invoice.STATUS_ISSUED;
+        }
+
         String vpa = gym != null && gym.getSettings() != null ? gym.getSettings().getUpiVpa() : null;
         String name = gym != null && gym.getSettings() != null ? gym.getSettings().getUpiName() : null;
-        String deepLink = (vpa != null && !vpa.isBlank())
-                ? UpiUtils.buildDeepLink(vpa, name, inv.getTotalPaise(), inv.getInvoiceNumber())
+        String deepLink = (vpa != null && !vpa.isBlank() && balancePaise > 0)
+                ? UpiUtils.buildDeepLink(vpa, name, balancePaise, inv.getInvoiceNumber())
                 : null;
-        return Map.of(
-                "invoiceNumber", inv.getInvoiceNumber(),
-                "amountPaise", inv.getTotalPaise(),
-                "amount", Money.formatIndian(inv.getTotalPaise()),
-                "gymName", gym != null ? gym.getName() : "",
-                "upiVpa", vpa == null ? "" : vpa,
-                "upiDeepLink", deepLink == null ? "" : deepLink,
-                "status", inv.getStatus());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("invoiceNumber", inv.getInvoiceNumber());
+        out.put("amountPaise", balancePaise);
+        out.put("amount", Money.formatIndian(balancePaise));
+        out.put("totalPaise", inv.getTotalPaise());
+        out.put("totalAmount", Money.formatIndian(inv.getTotalPaise()));
+        out.put("paidPaise", paidPaise);
+        out.put("paidAmount", Money.formatIndian(paidPaise));
+        out.put("gymName", gym != null ? gym.getName() : "");
+        out.put("upiVpa", vpa == null ? "" : vpa);
+        out.put("upiDeepLink", deepLink == null ? "" : deepLink);
+        out.put("status", effectiveStatus);
+        return out;
     }
 
     @GetMapping(value = "/{token}/qr", produces = MediaType.IMAGE_PNG_VALUE)
@@ -69,11 +92,14 @@ public class PublicPayController {
     public byte[] qr(@PathVariable String token) throws Exception {
         Invoice inv = billingService.getByPayToken(token);
         Gym gym = gymRepository.findById(inv.getGymId()).orElse(null);
+        long balancePaise = Invoice.STATUS_VOID.equals(inv.getStatus())
+                ? 0L
+                : paymentService.balanceDue(inv.getGymId(), inv.getId());
         String vpa = gym != null && gym.getSettings() != null ? gym.getSettings().getUpiVpa() : null;
         String name = gym != null && gym.getSettings() != null ? gym.getSettings().getUpiName() : null;
-        String deepLink = (vpa != null && !vpa.isBlank())
-                ? UpiUtils.buildDeepLink(vpa, name, inv.getTotalPaise(), inv.getInvoiceNumber())
-                : "upi://pay?pa=&am=" + inv.getTotalPaise();
+        String deepLink = (vpa != null && !vpa.isBlank() && balancePaise > 0)
+                ? UpiUtils.buildDeepLink(vpa, name, balancePaise, inv.getInvoiceNumber())
+                : "upi://pay?pa=&am=" + balancePaise;
         BitMatrix matrix = new QRCodeWriter().encode(deepLink, BarcodeFormat.QR_CODE, 300, 300);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         MatrixToImageWriter.writeToStream(matrix, "PNG", out);

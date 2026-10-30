@@ -15,4 +15,6 @@ public interface InvoiceRepository extends MongoRepository<Invoice, String> {
     List<Invoice> findByGymIdOrderByCreatedAtDesc(String gymId);
 
     List<Invoice> findByGymIdAndMemberIdOrderByCreatedAtDesc(String gymId, String memberId);
+
+    List<Invoice> findByGymIdAndOriginalInvoiceId(String gymId, String originalInvoiceId);
 }

@@ -27,6 +27,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
         runtimeCaching: [
@@ -47,11 +49,33 @@ export default defineConfig({
     // dev server on any other port would be blocked by the browser.
     strictPort: true,
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      '/api': { target: `http://127.0.0.1:${process.env.BACKEND_PORT || 8080}`, changeOrigin: true },
     },
   },
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react-router') || id.includes('react-dom') || id.includes('/react/')) {
+              return 'vendor-react'
+            }
+            if (id.includes('recharts') || id.includes('d3-')) {
+              return 'vendor-charts'
+            }
+            if (id.includes('@tanstack/react-query')) {
+              return 'vendor-query'
+            }
+            if (id.includes('i18next')) {
+              return 'vendor-i18n'
+            }
+            return 'vendor-libs'
+          }
+        },
+      },
+    },
   },
 })
+

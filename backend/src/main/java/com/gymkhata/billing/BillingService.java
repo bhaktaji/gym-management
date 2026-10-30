@@ -19,7 +19,8 @@ import com.gymkhata.member.model.Member;
 import com.gymkhata.member.repo.MemberRepository;
 import com.gymkhata.membership.model.Membership;
 import com.gymkhata.membership.repo.MembershipRepository;
-import com.mongodb.client.result.UpdateResult;
+import com.gymkhata.pt.CommissionService;
+import com.gymkhata.pt.model.PtEnrolment;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -27,7 +28,6 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -50,6 +50,7 @@ public class BillingService {
     private final PaymentProvider paymentProvider;
     private final PdfRenderer pdfRenderer;
     private final PaymentService paymentService;
+    private final CommissionService commissionService;
     private final Clock clock;
     private final AuditService auditService;
 
@@ -62,6 +63,7 @@ public class BillingService {
                           PaymentProvider paymentProvider,
                           PdfRenderer pdfRenderer,
                           PaymentService paymentService,
+                          CommissionService commissionService,
                           Clock clock,
                           AuditService auditService) {
         this.invoiceRepository = invoiceRepository;
@@ -73,14 +75,15 @@ public class BillingService {
         this.paymentProvider = paymentProvider;
         this.pdfRenderer = pdfRenderer;
         this.paymentService = paymentService;
+        this.commissionService = commissionService;
         this.clock = clock;
         this.auditService = auditService;
     }
 
     /**
-     * Generates the invoice for a membership. Takes a gapless number first; if the
-     * invoice insert then fails, a VOID invoice is written with that number so the
-     * series stays gapless and auditable.
+     * Generates the invoice for a membership (including optional joining fee and discount).
+     * Takes a gapless number first; if the invoice insert fails, a VOID invoice is written
+     * with that number so the series stays gapless and auditable.
      */
     public Invoice generateInvoice(String membershipId) {
         String gymId = SecurityUtils.currentGymId();
@@ -104,6 +107,9 @@ public class BillingService {
         invoice.setFinancialYear(fy);
         invoice.setMemberId(member.getId());
         invoice.setMembershipId(membership.getId());
+        invoice.setTrainerId(membership.getReferralTrainerId());
+        invoice.setJoiningFeePaise(membership.getJoiningFeePaise());
+        invoice.setDiscountPaise(membership.getDiscountPaise());
         invoice.setSupplierState(gym.getState());
         invoice.setPlaceOfSupplyState(member.getState() != null ? member.getState() : gym.getState());
         invoice.setGstRegistered(gym.isGstRegistered());
@@ -113,7 +119,7 @@ public class BillingService {
         invoice.setCreatedBy(SecurityUtils.currentUserId());
         invoice.setPayToken(UUID.randomUUID().toString().replace("-", ""));
 
-        buildLines(invoice, membership, gym, today);
+        buildMembershipLines(invoice, membership, gym, today);
 
         try {
             return invoiceRepository.save(invoice);
@@ -125,39 +131,124 @@ public class BillingService {
         }
     }
 
-    private void buildLines(Invoice invoice, Membership membership, Gym gym, LocalDate today) {
-        long total = membership.getPricePaise();
-        Invoice.Line line = new Invoice.Line();
-        line.setDescription("Membership - " + membership.getPlanName());
-        line.setQuantity(1);
-        line.setRatePaise(total);
-        line.setTotalPaise(total);
+    /**
+     * Generates the GST invoice for a Personal Training enrolment using the gym's GST settings
+     * and the PT package's configurable SAC code.
+     */
+    public Invoice generatePtInvoice(PtEnrolment enrolment, Member member, Gym gym) {
+        String gymId = gym.getId();
+        LocalDate today = clock.today();
+        String fy = FinancialYear.fyOf(today);
+        long seq = nextNumber(gymId, fy, SERIES_INV);
+        String number = InvoiceNumbering.format(gym.getInvoicePrefix(), fy, seq);
 
-        if (gym.isGstRegistered()) {
+        Invoice invoice = new Invoice();
+        invoice.setGymId(gymId);
+        invoice.setInvoiceNumber(number);
+        invoice.setFinancialYear(fy);
+        invoice.setMemberId(member.getId());
+        invoice.setPtEnrolmentId(enrolment.getId());
+        invoice.setTrainerId(enrolment.getTrainerId());
+        invoice.setDiscountPaise(enrolment.getDiscountPaise());
+        invoice.setSupplierState(gym.getState());
+        invoice.setPlaceOfSupplyState(member.getState() != null ? member.getState() : gym.getState());
+        invoice.setGstRegistered(gym.isGstRegistered());
+        invoice.setGstin(gym.isGstRegistered() ? gym.getGstin() : null);
+        invoice.setStatus(Invoice.STATUS_ISSUED);
+        invoice.setCreatedAt(clock.now());
+        String createdBy = "system";
+        try {
+            createdBy = SecurityUtils.currentUserId();
+        } catch (Exception ignored) {
+        }
+        invoice.setCreatedBy(createdBy);
+        invoice.setPayToken(UUID.randomUUID().toString().replace("-", ""));
+
+        long netTotal = Math.max(0L, enrolment.getPricePaise() - enrolment.getDiscountPaise());
+        String sac = (enrolment.getSacCode() != null && !enrolment.getSacCode().isBlank())
+                ? enrolment.getSacCode()
+                : (gym.getSettings() != null ? gym.getSettings().getPtSacCode() : gstConfig.getSac());
+        String desc = "Personal Training - " + enrolment.getPtPackageName() + " (Trainer: " + enrolment.getTrainerName() + ")";
+        if (enrolment.getDiscountPaise() > 0) {
+            desc += " [Less Discount]";
+        }
+        Invoice.Line line = createLine(desc, netTotal, sac, gym.isGstRegistered(), today,
+                invoice.getSupplierState(), invoice.getPlaceOfSupplyState());
+        invoice.setLines(List.of(line));
+        invoice.setTotalPaise(netTotal);
+        invoice.setAmountInWords(IndianNumberWords.amountInWords(netTotal));
+        invoice.setType(gym.isGstRegistered() ? Invoice.TYPE_TAX_INVOICE : Invoice.TYPE_BILL_OF_SUPPLY);
+
+        try {
+            return invoiceRepository.save(invoice);
+        } catch (Exception e) {
+            writeVoid(gymId, number, fy, "pt invoice insert failed: " + e.getMessage());
+            throw BusinessException.conflict("INVOICE_NUMBER_CONFLICT",
+                    "Could not allocate invoice number. Please retry.");
+        }
+    }
+
+    private void buildMembershipLines(Invoice invoice, Membership membership, Gym gym, LocalDate today) {
+        List<Invoice.Line> lines = new ArrayList<>();
+        long grossPlan = membership.getPricePaise();
+        long joiningFee = Math.max(0L, membership.getJoiningFeePaise());
+        long discount = Math.max(0L, membership.getDiscountPaise());
+
+        long planDiscount = Math.min(grossPlan, discount);
+        long joiningDiscount = Math.max(0L, discount - planDiscount);
+
+        long netPlanPaise = Math.max(0L, grossPlan - planDiscount);
+        long netJoiningPaise = Math.max(0L, joiningFee - joiningDiscount);
+
+        String planDesc = "Membership - " + membership.getPlanName();
+        if (planDiscount > 0) {
+            planDesc += " (Less Discount)";
+        }
+        lines.add(createLine(planDesc, netPlanPaise, gstConfig.getSac(), gym.isGstRegistered(), today,
+                invoice.getSupplierState(), invoice.getPlaceOfSupplyState()));
+
+        if (netJoiningPaise > 0) {
+            lines.add(createLine("Admission / Joining Fee", netJoiningPaise, gstConfig.getSac(), gym.isGstRegistered(), today,
+                    invoice.getSupplierState(), invoice.getPlaceOfSupplyState()));
+        }
+
+        long total = netPlanPaise + netJoiningPaise;
+        invoice.setLines(lines);
+        invoice.setTotalPaise(total);
+        invoice.setAmountInWords(IndianNumberWords.amountInWords(total));
+        invoice.setType(gym.isGstRegistered() ? Invoice.TYPE_TAX_INVOICE : Invoice.TYPE_BILL_OF_SUPPLY);
+    }
+
+    private Invoice.Line createLine(String description, long totalPaise, String sac,
+                                    boolean gstRegistered, LocalDate today,
+                                    String supplierState, String placeOfSupplyState) {
+        Invoice.Line line = new Invoice.Line();
+        line.setDescription(description);
+        line.setQuantity(1);
+        line.setRatePaise(totalPaise);
+        line.setTotalPaise(totalPaise);
+
+        if (gstRegistered) {
             int rate = gstConfig.rateFor(today);
-            line.setSac(gstConfig.getSac());
+            line.setSac(sac != null && !sac.isBlank() ? sac : gstConfig.getSac());
             line.setGstRate(rate);
-            boolean interState = invoice.getPlaceOfSupplyState() != null
-                    && !invoice.getPlaceOfSupplyState().equalsIgnoreCase(invoice.getSupplierState());
+            boolean interState = placeOfSupplyState != null
+                    && !placeOfSupplyState.equalsIgnoreCase(supplierState);
             GstCalculator.Breakdown b = interState
-                    ? GstCalculator.splitInterstate(total, rate)
-                    : GstCalculator.split(total, rate);
+                    ? GstCalculator.splitInterstate(totalPaise, rate)
+                    : GstCalculator.split(totalPaise, rate);
             line.setTaxablePaise(b.taxablePaise());
             line.setCgstPaise(b.cgstPaise());
             line.setSgstPaise(b.sgstPaise());
             line.setIgstPaise(b.igstPaise());
-            invoice.setType(Invoice.TYPE_TAX_INVOICE);
         } else {
             line.setGstRate(0);
-            line.setTaxablePaise(total);
+            line.setTaxablePaise(totalPaise);
             line.setCgstPaise(0);
             line.setSgstPaise(0);
             line.setIgstPaise(0);
-            invoice.setType(Invoice.TYPE_BILL_OF_SUPPLY);
         }
-        invoice.setLines(List.of(line));
-        invoice.setTotalPaise(total);
-        invoice.setAmountInWords(IndianNumberWords.amountInWords(total));
+        return line;
     }
 
     private void writeVoid(String gymId, String number, String fy, String reason) {
@@ -206,6 +297,7 @@ public class BillingService {
 
     /**
      * Correction for an issued invoice: a credit note in its own gapless CN series.
+     * Also creates a reversing commission entry if the invoice had accrued trainer commission.
      */
     public Invoice createCreditNote(String invoiceId, String reason) {
         String gymId = SecurityUtils.currentGymId();
@@ -222,13 +314,17 @@ public class BillingService {
         cn.setInvoiceNumber(number);
         cn.setFinancialYear(fy);
         cn.setType(Invoice.TYPE_CREDIT_NOTE);
+        cn.setOriginalInvoiceId(original.getId());
         cn.setMemberId(original.getMemberId());
         cn.setMembershipId(original.getMembershipId());
+        cn.setPtEnrolmentId(original.getPtEnrolmentId());
+        cn.setTrainerId(original.getTrainerId());
         cn.setSupplierState(original.getSupplierState());
         cn.setPlaceOfSupplyState(original.getPlaceOfSupplyState());
         cn.setGstRegistered(original.isGstRegistered());
         cn.setGstin(original.getGstin());
         cn.setStatus(Invoice.STATUS_ISSUED);
+        cn.setVoidReason(reason);
         cn.setCreatedAt(clock.now());
         cn.setCreatedBy(SecurityUtils.currentUserId());
 
@@ -251,7 +347,9 @@ public class BillingService {
         cn.setTotalPaise(-original.getTotalPaise());
         cn.setAmountInWords(IndianNumberWords.amountInWords(Math.abs(original.getTotalPaise())));
         try {
-            return invoiceRepository.save(cn);
+            Invoice savedCn = invoiceRepository.save(cn);
+            commissionService.reverseOnCreditNote(original, savedCn);
+            return savedCn;
         } catch (Exception e) {
             writeVoid(gymId, number, fy, "credit note insert failed: " + e.getMessage());
             throw BusinessException.conflict("INVOICE_NUMBER_CONFLICT", "Could not allocate credit note number. Please retry.");
@@ -260,6 +358,44 @@ public class BillingService {
 
     public List<Invoice> list() {
         return invoiceRepository.findByGymIdOrderByCreatedAtDesc(SecurityUtils.currentGymId());
+    }
+
+    /**
+     * Dues / Outstanding list: all non-void invoices with balanceDue > 0, including
+     * partially paid and unpaid invoices, enriched with member name and phone.
+     */
+    public List<Map<String, Object>> listDues() {
+        String gymId = SecurityUtils.currentGymId();
+        List<Invoice> invoices = invoiceRepository.findByGymIdOrderByCreatedAtDesc(gymId);
+        List<Map<String, Object>> dues = new ArrayList<>();
+        for (Invoice inv : invoices) {
+            if (Invoice.STATUS_VOID.equals(inv.getStatus())
+                    || Invoice.TYPE_CREDIT_NOTE.equals(inv.getType())
+                    || inv.getTotalPaise() <= 0) {
+                continue;
+            }
+            long balance = paymentService.balanceDue(gymId, inv.getId());
+            if (balance <= 0) {
+                continue;
+            }
+            long paid = paymentService.amountPaid(gymId, inv.getId());
+            Member m = inv.getMemberId() == null ? null
+                    : memberRepository.findById(inv.getMemberId()).orElse(null);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("invoiceId", inv.getId());
+            row.put("invoiceNumber", inv.getInvoiceNumber());
+            row.put("memberId", inv.getMemberId());
+            row.put("memberName", m != null ? m.getName() : "");
+            row.put("memberPhone", m != null ? m.getPhone() : "");
+            row.put("totalPaise", inv.getTotalPaise());
+            row.put("paidPaise", paid);
+            row.put("balancePaise", balance);
+            row.put("status", paid > 0 ? "PARTIAL" : "UNPAID");
+            row.put("payToken", inv.getPayToken());
+            row.put("createdAt", inv.getCreatedAt());
+            dues.add(row);
+        }
+        return dues;
     }
 
     public List<Invoice> listByMember(String memberId) {

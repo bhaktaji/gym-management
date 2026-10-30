@@ -1,0 +1,2 @@
+name,phone,email,gender,notes
+"Corrupted Bytes \xff\xfe\xfd",9876508888,badutf8@demo.gymkhata.in,MALE,"Invalid UTF-8 byte sequence"
