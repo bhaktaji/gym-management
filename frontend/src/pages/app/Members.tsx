@@ -21,6 +21,11 @@ export type Member = {
   whatsappOptIn: boolean
   joinedAt?: string
   notes?: string
+  pinFailedAttempts?: number
+  pinLockedUntil?: string
+  unboundPinBudgetExhausted?: boolean
+  boundDevices?: { deviceId: string; userAgent: string; boundAt: string }[]
+  pendingDeviceRequests?: { requestId: string; userAgent: string; clientIp: string; requestedAt: string }[]
 }
 
 const schema = z.object({

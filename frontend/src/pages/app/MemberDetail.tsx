@@ -36,6 +36,12 @@ export function MemberDetail() {
   const [error, setError] = useState('')
   const [renewPlanId, setRenewPlanId] = useState('')
   const [showRenew, setShowRenew] = useState(false)
+  const [newPinNotice, setNewPinNotice] = useState<string | null>(null)
+
+  const gym = useQuery({
+    queryKey: ['gym'],
+    queryFn: () => api<{ settings?: { attendanceEnabled?: boolean } }>('/api/v1/tenant/gym'),
+  })
 
   const member = useQuery({
     queryKey: ['member', id],
@@ -77,6 +83,50 @@ export function MemberDetail() {
     onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
   })
 
+  const approveDevice = useMutation({
+    mutationFn: (requestId: string) =>
+      api<Member>(`/api/v1/members/${id}/pending-devices/${requestId}/approve`, { method: 'POST' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', id] })
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  })
+
+  const rejectDevice = useMutation({
+    mutationFn: (requestId: string) =>
+      api<Member>(`/api/v1/members/${id}/pending-devices/${requestId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', id] })
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  })
+
+  const revokeDevice = useMutation({
+    mutationFn: (deviceId: string) =>
+      api<Member>(`/api/v1/members/${id}/devices/${deviceId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', id] })
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  })
+
+  const resetPinLockout = useMutation({
+    mutationFn: () => api<Member>(`/api/v1/members/${id}/reset-pin-lockout`, { method: 'POST' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', id] })
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  })
+
+  const resetPin = useMutation({
+    mutationFn: () => api<{ pin: string }>(`/api/v1/members/${id}/reset-pin`, { method: 'POST' }),
+    onSuccess: (res) => {
+      setNewPinNotice(res.pin)
+      void queryClient.invalidateQueries({ queryKey: ['member', id] })
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  })
+
   const erase = useMutation({
     mutationFn: () => api<Member>(`/api/v1/members/${id}/erase`, { method: 'POST' }),
     onSuccess: () => {
@@ -103,6 +153,7 @@ export function MemberDetail() {
 
   const m = member.data
   const activeMembership = (memberships.data ?? []).find((x) => x.status === 'ACTIVE')
+  const showDeviceSecurity = Boolean(gym.data?.settings?.attendanceEnabled)
 
   return (
     <div>
@@ -170,6 +221,116 @@ export function MemberDetail() {
           </button>
         </div>
       </Card>
+
+      {showDeviceSecurity ? (
+        <Card className="mt-4" data-testid="member-device-security-card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-slate-900">Bound Devices &amp; Security PIN</h2>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="reset-pin-lockout-btn"
+                className="btn-outline !px-2.5 !py-1 text-xs"
+                onClick={() => resetPinLockout.mutate()}
+              >
+                Reset PIN Lockout
+              </button>
+              <button
+                type="button"
+                data-testid="reset-member-pin-btn"
+                className="btn-secondary !px-2.5 !py-1 text-xs"
+                onClick={() => resetPin.mutate()}
+              >
+                Reset 4-Digit PIN
+              </button>
+            </div>
+          </div>
+
+          {newPinNotice ? (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mb-3 text-sm text-emerald-900">
+              New 4-digit PIN generated: <span className="font-mono font-bold">{newPinNotice}</span> (shown once)
+            </div>
+          ) : null}
+
+          {m.unboundPinBudgetExhausted ? (
+            <div
+              data-testid="pin-budget-exhausted-alert"
+              className="rounded-lg bg-amber-50 border border-amber-300 p-3 mb-3 text-xs text-amber-900"
+            >
+              Security Alert: Unbound-device PIN failure budget (20/24h across IPs) was exhausted. New devices require your approval below.
+            </div>
+          ) : null}
+
+          {(m.pendingDeviceRequests ?? []).length > 0 ? (
+            <div className="mb-4" data-testid="pending-device-requests-list">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                Pending Device Binding Requests ({(m.pendingDeviceRequests ?? []).length})
+              </h3>
+              <ul className="space-y-2">
+                {(m.pendingDeviceRequests ?? []).map((req) => (
+                  <li
+                    key={req.requestId}
+                    data-testid={`pending-device-${req.requestId}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{req.userAgent}</p>
+                      <p className="text-xs text-slate-500">
+                        IP: {req.clientIp} · Requested {formatDate(req.requestedAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        data-testid={`approve-device-${req.requestId}`}
+                        className="btn-primary !px-2.5 !py-1 text-xs"
+                        onClick={() => approveDevice.mutate(req.requestId)}
+                      >
+                        Approve Device
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`reject-device-${req.requestId}`}
+                        className="btn-outline !px-2.5 !py-1 text-xs"
+                        onClick={() => rejectDevice.mutate(req.requestId)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+              Bound Devices ({(m.boundDevices ?? []).length} / 2)
+            </h3>
+            {(m.boundDevices ?? []).length === 0 ? (
+              <p className="text-xs text-slate-500">No bound devices yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {(m.boundDevices ?? []).map((dev) => (
+                  <li key={dev.deviceId} className="flex items-center justify-between text-sm border-b border-slate-100 pb-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 truncate">{dev.userAgent}</p>
+                      <p className="text-xs text-slate-500">Bound {formatDate(dev.boundAt)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-outline !px-2 !py-1 text-xs"
+                      onClick={() => revokeDevice.mutate(dev.deviceId)}
+                    >
+                      Revoke
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="mt-4">
         <h2 className="font-semibold text-slate-900 mb-3">{t('billing.invoices')}</h2>

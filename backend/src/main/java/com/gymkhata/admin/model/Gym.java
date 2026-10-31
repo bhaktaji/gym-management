@@ -248,6 +248,10 @@ public class Gym {
         private boolean membershipReferralCommissionEnabled = false;
         private CommissionRule defaultCommissionRule;
 
+        // Per-gym & per-item-type GST configuration (keys: MEMBERSHIP, PT, ADMISSION_FEE).
+        // Defaults (SAC 999723, 5% No ITC from 2025-09-22) should be confirmed with the gym's CA.
+        private Map<String, GstItemRule> gstRules = new java.util.LinkedHashMap<>();
+
         public String getUpiVpa() {
             return upiVpa;
         }
@@ -414,6 +418,82 @@ public class Gym {
 
         public void setDefaultCommissionRule(CommissionRule defaultCommissionRule) {
             this.defaultCommissionRule = defaultCommissionRule;
+        }
+
+        public Map<String, GstItemRule> getGstRules() {
+            if (gstRules == null) {
+                gstRules = new java.util.LinkedHashMap<>();
+            }
+            return gstRules;
+        }
+
+        public void setGstRules(Map<String, GstItemRule> gstRules) {
+            this.gstRules = gstRules;
+        }
+
+        public GstItemRule getGstRuleFor(String itemType) {
+            if (gstRules == null || gstRules.isEmpty() || itemType == null) {
+                return null;
+            }
+            GstItemRule direct = gstRules.get(itemType);
+            if (direct != null) {
+                return direct;
+            }
+            for (Map.Entry<String, GstItemRule> entry : gstRules.entrySet()) {
+                if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(itemType)) {
+                    return entry.getValue();
+                }
+            }
+            return null;
+        }
+    }
+
+    public static class GstItemRule {
+        private String sac;
+        private Integer gstRate;
+        private LocalDate effectiveFrom;
+        private String itcStatus;
+
+        public GstItemRule() {
+        }
+
+        public GstItemRule(String sac, Integer gstRate, LocalDate effectiveFrom, String itcStatus) {
+            this.sac = sac;
+            this.gstRate = gstRate;
+            this.effectiveFrom = effectiveFrom;
+            this.itcStatus = itcStatus;
+        }
+
+        public String getSac() {
+            return sac;
+        }
+
+        public void setSac(String sac) {
+            this.sac = sac;
+        }
+
+        public Integer getGstRate() {
+            return gstRate;
+        }
+
+        public void setGstRate(Integer gstRate) {
+            this.gstRate = gstRate;
+        }
+
+        public LocalDate getEffectiveFrom() {
+            return effectiveFrom;
+        }
+
+        public void setEffectiveFrom(LocalDate effectiveFrom) {
+            this.effectiveFrom = effectiveFrom;
+        }
+
+        public String getItcStatus() {
+            return itcStatus;
+        }
+
+        public void setItcStatus(String itcStatus) {
+            this.itcStatus = itcStatus;
         }
     }
 }

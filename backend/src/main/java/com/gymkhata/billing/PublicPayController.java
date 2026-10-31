@@ -84,6 +84,9 @@ public class PublicPayController {
         out.put("upiVpa", vpa == null ? "" : vpa);
         out.put("upiDeepLink", deepLink == null ? "" : deepLink);
         out.put("status", effectiveStatus);
+        out.put("gstRegistered", inv.isGstRegistered());
+        out.put("gstin", inv.getGstin() == null ? "" : inv.getGstin());
+        out.put("lines", inv.getLines());
         return out;
     }
 

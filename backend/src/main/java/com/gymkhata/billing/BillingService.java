@@ -165,15 +165,20 @@ public class BillingService {
         invoice.setPayToken(UUID.randomUUID().toString().replace("-", ""));
 
         long netTotal = Math.max(0L, enrolment.getPricePaise() - enrolment.getDiscountPaise());
-        String sac = (enrolment.getSacCode() != null && !enrolment.getSacCode().isBlank())
-                ? enrolment.getSacCode()
-                : (gym.getSettings() != null ? gym.getSettings().getPtSacCode() : gstConfig.getSac());
         String desc = "Personal Training - " + enrolment.getPtPackageName() + " (Trainer: " + enrolment.getTrainerName() + ")";
         if (enrolment.getDiscountPaise() > 0) {
             desc += " [Less Discount]";
         }
-        Invoice.Line line = createLine(desc, netTotal, sac, gym.isGstRegistered(), today,
-                invoice.getSupplierState(), invoice.getPlaceOfSupplyState());
+        Invoice.Line line = createLine(
+                GstConfig.ITEM_PT,
+                desc,
+                netTotal,
+                enrolment.getSacCode(),
+                gym,
+                today,
+                invoice.getSupplierState(),
+                invoice.getPlaceOfSupplyState()
+        );
         invoice.setLines(List.of(line));
         invoice.setTotalPaise(netTotal);
         invoice.setAmountInWords(IndianNumberWords.amountInWords(netTotal));
@@ -204,12 +209,28 @@ public class BillingService {
         if (planDiscount > 0) {
             planDesc += " (Less Discount)";
         }
-        lines.add(createLine(planDesc, netPlanPaise, gstConfig.getSac(), gym.isGstRegistered(), today,
-                invoice.getSupplierState(), invoice.getPlaceOfSupplyState()));
+        lines.add(createLine(
+                GstConfig.ITEM_MEMBERSHIP,
+                planDesc,
+                netPlanPaise,
+                null,
+                gym,
+                today,
+                invoice.getSupplierState(),
+                invoice.getPlaceOfSupplyState()
+        ));
 
         if (netJoiningPaise > 0) {
-            lines.add(createLine("Admission / Joining Fee", netJoiningPaise, gstConfig.getSac(), gym.isGstRegistered(), today,
-                    invoice.getSupplierState(), invoice.getPlaceOfSupplyState()));
+            lines.add(createLine(
+                    GstConfig.ITEM_ADMISSION_FEE,
+                    "Admission / Joining Fee",
+                    netJoiningPaise,
+                    null,
+                    gym,
+                    today,
+                    invoice.getSupplierState(),
+                    invoice.getPlaceOfSupplyState()
+            ));
         }
 
         long total = netPlanPaise + netJoiningPaise;
@@ -219,19 +240,29 @@ public class BillingService {
         invoice.setType(gym.isGstRegistered() ? Invoice.TYPE_TAX_INVOICE : Invoice.TYPE_BILL_OF_SUPPLY);
     }
 
-    private Invoice.Line createLine(String description, long totalPaise, String sac,
-                                    boolean gstRegistered, LocalDate today,
-                                    String supplierState, String placeOfSupplyState) {
+    private Invoice.Line createLine(String itemType,
+                                    String description,
+                                    long totalPaise,
+                                    String explicitSacOverride,
+                                    Gym gym,
+                                    LocalDate today,
+                                    String supplierState,
+                                    String placeOfSupplyState) {
         Invoice.Line line = new Invoice.Line();
+        line.setItemType(GstConfig.normalizeItemType(itemType));
         line.setDescription(description);
         line.setQuantity(1);
         line.setRatePaise(totalPaise);
         line.setTotalPaise(totalPaise);
 
+        boolean gstRegistered = gym != null && gym.isGstRegistered();
         if (gstRegistered) {
-            int rate = gstConfig.rateFor(today);
-            line.setSac(sac != null && !sac.isBlank() ? sac : gstConfig.getSac());
+            GstConfig.ResolvedTaxRule rule = gstConfig.resolveFor(gym, itemType, explicitSacOverride, today);
+            int rate = rule.gstRate();
+            line.setSac(rule.sac());
             line.setGstRate(rate);
+            line.setItcStatus(rule.itcStatus());
+            line.setGstEffectiveFrom(rule.effectiveFrom() != null ? rule.effectiveFrom().toString() : null);
             boolean interState = placeOfSupplyState != null
                     && !placeOfSupplyState.equalsIgnoreCase(supplierState);
             GstCalculator.Breakdown b = interState
@@ -243,6 +274,7 @@ public class BillingService {
             line.setIgstPaise(b.igstPaise());
         } else {
             line.setGstRate(0);
+            line.setItcStatus(GstConfig.ITC_NA);
             line.setTaxablePaise(totalPaise);
             line.setCgstPaise(0);
             line.setSgstPaise(0);
@@ -331,12 +363,15 @@ public class BillingService {
         List<Invoice.Line> lines = new ArrayList<>();
         for (Invoice.Line l : original.getLines()) {
             Invoice.Line cl = new Invoice.Line();
+            cl.setItemType(l.getItemType());
             cl.setDescription("Credit note for " + original.getInvoiceNumber() + " - " + l.getDescription());
             cl.setSac(l.getSac());
             cl.setQuantity(l.getQuantity());
             cl.setRatePaise(-l.getRatePaise());
             cl.setTaxablePaise(-l.getTaxablePaise());
             cl.setGstRate(l.getGstRate());
+            cl.setItcStatus(l.getItcStatus());
+            cl.setGstEffectiveFrom(l.getGstEffectiveFrom());
             cl.setCgstPaise(-l.getCgstPaise());
             cl.setSgstPaise(-l.getSgstPaise());
             cl.setIgstPaise(-l.getIgstPaise());

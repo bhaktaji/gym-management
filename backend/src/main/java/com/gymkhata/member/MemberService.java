@@ -112,6 +112,8 @@ public class MemberService {
         m.setPinHash(passwordEncoder.encode(newPin));
         m.setPinFailedAttempts(0);
         m.setPinLockedUntil(null);
+        m.setUnboundPinFailureTimestamps(new ArrayList<>());
+        m.setUnboundPinBudgetExhausted(false);
         m.setUpdatedAt(clock.now());
         memberRepository.save(m);
         if (checkinService != null) {
@@ -148,12 +150,63 @@ public class MemberService {
         Member m = get(id);
         m.setPinFailedAttempts(0);
         m.setPinLockedUntil(null);
+        m.setUnboundPinFailureTimestamps(new ArrayList<>());
+        m.setUnboundPinBudgetExhausted(false);
         m.setUpdatedAt(clock.now());
         Member saved = memberRepository.save(m);
         if (checkinService != null) {
             checkinService.clearLockoutsForPhone(m.getPhone());
         }
         auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "MEMBER_PIN_LOCKOUT_RESET", "member", id, m.getPhone());
+        return saved;
+    }
+
+    public Member approvePendingDevice(String id, String requestId) {
+        String gymId = SecurityUtils.currentGymId();
+        Member m = get(id);
+        List<Member.PendingDeviceRequest> pending = m.getPendingDeviceRequests();
+        Member.PendingDeviceRequest target = pending.stream()
+                .filter(r -> (requestId == null || requestId.isBlank()) || requestId.equals(r.getRequestId()))
+                .findFirst()
+                .orElseThrow(() -> BusinessException.notFound("PENDING_DEVICE_NOT_FOUND", "Pending device request not found"));
+
+        if (m.getBoundDevices().size() >= com.gymkhata.checkin.CheckinService.MAX_BOUND_DEVICES) {
+            throw BusinessException.forbidden("MAX_DEVICES_REACHED",
+                    "Maximum 2 devices bound to this member. Revoke an old device before approving.");
+        }
+
+        pending.removeIf(r -> target.getRequestId().equals(r.getRequestId()));
+        m.getBoundDevices().add(new Member.BoundDevice(
+                target.getRequestId(),
+                target.getTokenHash(),
+                target.getUserAgent(),
+                clock.now()
+        ));
+        m.setPinFailedAttempts(0);
+        m.setPinLockedUntil(null);
+        m.setUnboundPinFailureTimestamps(new ArrayList<>());
+        m.setUnboundPinBudgetExhausted(false);
+        m.setUpdatedAt(clock.now());
+        Member saved = memberRepository.save(m);
+        if (checkinService != null) {
+            checkinService.clearLockoutsForPhone(m.getPhone());
+        }
+        auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "MEMBER_DEVICE_APPROVED",
+                "member", id, "requestId=" + target.getRequestId());
+        return saved;
+    }
+
+    public Member rejectPendingDevice(String id, String requestId) {
+        String gymId = SecurityUtils.currentGymId();
+        Member m = get(id);
+        boolean removed = m.getPendingDeviceRequests().removeIf(r -> requestId != null && requestId.equals(r.getRequestId()));
+        if (!removed) {
+            throw BusinessException.notFound("PENDING_DEVICE_NOT_FOUND", "Pending device request not found");
+        }
+        m.setUpdatedAt(clock.now());
+        Member saved = memberRepository.save(m);
+        auditService.log(gymId, SecurityUtils.currentUserId(), "GYM_OWNER", "MEMBER_DEVICE_REJECTED",
+                "member", id, "requestId=" + requestId);
         return saved;
     }
 

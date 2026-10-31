@@ -14,7 +14,19 @@ type Invoice = {
   createdAt: string
   memberId?: string
   payToken?: string
-  lines?: { description: string; sac?: string; taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number; gstRate: number; totalPaise: number }[]
+  lines?: {
+    itemType?: string
+    description: string
+    sac?: string
+    taxablePaise: number
+    cgstPaise: number
+    sgstPaise: number
+    igstPaise: number
+    gstRate: number
+    itcStatus?: string
+    gstEffectiveFrom?: string
+    totalPaise: number
+  }[]
   amountInWords?: string
   gstRegistered?: boolean
   gstin?: string
@@ -263,9 +275,10 @@ export function Billing() {
                   {t('settings.gstin')}: {selected.gstin ?? '-'}
                 </p>
                 {(selected.lines ?? []).map((l, i) => (
-                  <div key={i} className="text-xs text-slate-600 flex justify-between py-0.5">
+                  <div key={i} className="text-xs text-slate-600 flex justify-between py-0.5" data-testid="invoice-line-gst">
                     <span>
-                      {l.description} {l.sac ? `· SAC ${l.sac}` : ''} @ {l.gstRate}%
+                      {l.description} {l.sac ? `· SAC ${l.sac}` : ''} @ {l.gstRate}%{' '}
+                      [{l.itcStatus || 'No ITC'}]
                     </span>
                     <span>{formatMoney(l.totalPaise)}</span>
                   </div>

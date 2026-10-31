@@ -27,7 +27,7 @@ app:
   name: GymKhata
   timezone: Asia/Kolkata
   # Origins that may call the API (browser front-ends). Comma separated.
-  cors-allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}"
+  cors-allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080}"
   super-admin:
     phone: ${SUPER_ADMIN_PHONE:+919000000001}
     password: ${SUPER_ADMIN_PASSWORD:ChangeMe@123}
@@ -70,13 +70,45 @@ app:
     enabled: true
     start: "21:00"
     end: "08:00"
+  # Default GST rules for physical fitness services (SAC 999723).
+  # IMPORTANT: Confirm applicable GST rate, SAC code, and ITC eligibility with your Chartered Accountant (CA).
   gst:
     sac: "999723"
     rates:
       - rate: 18
         effective-from: "2000-01-01"
+        itc-status: "With ITC"
       - rate: 5
         effective-from: "2025-09-22"
+        itc-status: "No ITC"
+    items:
+      MEMBERSHIP:
+        sac: "${GST_MEMBERSHIP_SAC:999723}"
+        rates:
+          - rate: 18
+            effective-from: "2000-01-01"
+            itc-status: "With ITC"
+          - rate: 5
+            effective-from: "2025-09-22"
+            itc-status: "No ITC"
+      PT:
+        sac: "${GST_PT_SAC:999723}"
+        rates:
+          - rate: 18
+            effective-from: "2000-01-01"
+            itc-status: "With ITC"
+          - rate: 5
+            effective-from: "2025-09-22"
+            itc-status: "No ITC"
+      ADMISSION_FEE:
+        sac: "${GST_ADMISSION_FEE_SAC:999723}"
+        rates:
+          - rate: 18
+            effective-from: "2000-01-01"
+            itc-status: "With ITC"
+          - rate: 5
+            effective-from: "2025-09-22"
+            itc-status: "No ITC"
 
 management:
   endpoints:

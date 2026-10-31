@@ -16,6 +16,7 @@ import com.lowagie.text.PageSize;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.Phrase;
 import com.lowagie.text.pdf.BaseFont;
+import com.lowagie.text.pdf.FontSelector;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
@@ -27,30 +28,33 @@ import java.util.List;
 
 /**
  * Renders GST invoices, printable A4 self-check-in QR posters, and monthly
- * trainer commission statements as PDFs (pure Java, OpenPDF) with embedded
- * Unicode TrueType font support for Devanagari (Hindi) and the Indian Rupee symbol (₹).
+ * trainer commission statements as PDFs (pure Java, OpenPDF) with composite
+ * FontSelector support combining Helvetica (for Latin/ASCII) and embedded
+ * NotoSansDevanagari TrueType font (for Devanagari Hindi and the Indian Rupee symbol ₹).
  */
 @Component
 public class PdfRenderer {
 
-    private final Font h1;
-    private final Font h2;
-    private final Font normal;
-    private final Font small;
+    private final FontSelector h1;
+    private final FontSelector h2;
+    private final FontSelector normal;
+    private final FontSelector small;
 
     public PdfRenderer() {
         BaseFont unicodeBase = loadUnicodeFont();
+        this.h1 = createSelector(unicodeBase, 16, Font.BOLD);
+        this.h2 = createSelector(unicodeBase, 11, Font.BOLD);
+        this.normal = createSelector(unicodeBase, 9, Font.NORMAL);
+        this.small = createSelector(unicodeBase, 8, Font.NORMAL);
+    }
+
+    private static FontSelector createSelector(BaseFont unicodeBase, float size, int style) {
+        FontSelector fs = new FontSelector();
+        fs.addFont(new Font(Font.HELVETICA, size, style));
         if (unicodeBase != null) {
-            this.h1 = new Font(unicodeBase, 16, Font.BOLD);
-            this.h2 = new Font(unicodeBase, 11, Font.BOLD);
-            this.normal = new Font(unicodeBase, 9, Font.NORMAL);
-            this.small = new Font(unicodeBase, 8, Font.NORMAL);
-        } else {
-            this.h1 = new Font(Font.HELVETICA, 16, Font.BOLD);
-            this.h2 = new Font(Font.HELVETICA, 11, Font.BOLD);
-            this.normal = new Font(Font.HELVETICA, 9, Font.NORMAL);
-            this.small = new Font(Font.HELVETICA, 8, Font.NORMAL);
+            fs.addFont(new Font(unicodeBase, size, style));
         }
+        return fs;
     }
 
     private static BaseFont loadUnicodeFont() {
@@ -84,11 +88,11 @@ public class PdfRenderer {
             default -> "BILL OF SUPPLY";
         };
 
-        Paragraph head = new Paragraph(title, h1);
+        Paragraph head = paragraph(title, h1);
         head.setAlignment(Element.ALIGN_CENTER);
         doc.add(head);
 
-        Paragraph gymName = new Paragraph(gym != null ? gym.getName() : "", h2);
+        Paragraph gymName = paragraph(gym != null ? gym.getName() : "", h2);
         gymName.setAlignment(Element.ALIGN_CENTER);
         doc.add(gymName);
         if (gym != null) {
@@ -108,12 +112,12 @@ public class PdfRenderer {
         doc.add(meta);
         doc.add(new Paragraph(" "));
 
-        PdfPTable lines = new PdfPTable(new float[]{4, 1, 1.6f, 1.6f, 1.6f});
+        PdfPTable lines = new PdfPTable(new float[]{3.6f, 1.0f, 1.4f, 2.2f, 1.4f});
         lines.setWidthPercentage(100);
-        lines.setWidths(new float[]{4, 1, 1.6f, 1.6f, 1.6f});
-        String[] headers = {"Description", "SAC", "Taxable", "GST", "Total"};
+        lines.setWidths(new float[]{3.6f, 1.0f, 1.4f, 2.2f, 1.4f});
+        String[] headers = {"Description", "SAC", "Taxable", "GST (Rate & ITC)", "Total"};
         for (String h : headers) {
-            PdfPCell c = new PdfPCell(new Phrase(h, h2));
+            PdfPCell c = new PdfPCell(phrase(h, h2));
             c.setHorizontalAlignment(Element.ALIGN_RIGHT);
             c.setBorderWidth(0.5f);
             lines.addCell(c);
@@ -121,7 +125,7 @@ public class PdfRenderer {
         if (invoice.getLines() != null) {
             for (Invoice.Line l : invoice.getLines()) {
                 lines.addCell(cell(l.getDescription() == null ? "" : l.getDescription()));
-                lines.addCell(cell(l.getSac() == null ? "" : l.getSac()));
+                lines.addCell(cell(l.getSac() == null ? "-" : l.getSac()));
                 lines.addCell(right(cell("₹" + Money.formatIndian(l.getTaxablePaise()))));
                 lines.addCell(right(cell(taxText(l))));
                 lines.addCell(right(cell("₹" + Money.formatIndian(l.getTotalPaise()))));
@@ -137,13 +141,13 @@ public class PdfRenderer {
         doc.add(totals);
 
         if (invoice.getAmountInWords() != null) {
-            doc.add(new Paragraph("Amount in words: " + invoice.getAmountInWords(), small));
+            doc.add(paragraph("Amount in words: " + invoice.getAmountInWords(), small));
         }
         if (invoice.getGstin() != null) {
-            doc.add(new Paragraph("Tax payable as per the invoice. Subject to local jurisdiction.", small));
+            doc.add(paragraph("Tax payable as per the invoice (SAC, GST Rate & ITC Status shown per line; confirm with your CA). Subject to local jurisdiction.", small));
         }
         doc.add(new Paragraph(" "));
-        doc.add(new Paragraph("This is a computer generated document.", small));
+        doc.add(paragraph("This is a computer generated document.", small));
         doc.close();
         return out.toByteArray();
     }
@@ -157,7 +161,7 @@ public class PdfRenderer {
         PdfWriter.getInstance(doc, out);
         doc.open();
 
-        Paragraph gymHeader = new Paragraph(gym != null ? gym.getName() : "GymKhata", h1);
+        Paragraph gymHeader = paragraph(gym != null ? gym.getName() : "GymKhata", h1);
         gymHeader.setAlignment(Element.ALIGN_CENTER);
         doc.add(gymHeader);
 
@@ -166,11 +170,11 @@ public class PdfRenderer {
         }
         doc.add(new Paragraph(" "));
 
-        Paragraph titleEn = new Paragraph("SELF CHECK-IN · SCAN QR CODE", h1);
+        Paragraph titleEn = paragraph("SELF CHECK-IN · SCAN QR CODE", h1);
         titleEn.setAlignment(Element.ALIGN_CENTER);
         doc.add(titleEn);
 
-        Paragraph titleHi = new Paragraph("सेल्फ चेक-इन · क्यूआर कोड स्कैन करें", h2);
+        Paragraph titleHi = paragraph("सेल्फ चेक-इन · क्यूआर कोड स्कैन करें", h2);
         titleHi.setAlignment(Element.ALIGN_CENTER);
         doc.add(titleHi);
         doc.add(new Paragraph(" "));
@@ -187,12 +191,12 @@ public class PdfRenderer {
         }
 
         doc.add(new Paragraph(" "));
-        Paragraph urlLine = new Paragraph(checkinUrl, h2);
+        Paragraph urlLine = paragraph(checkinUrl, h2);
         urlLine.setAlignment(Element.ALIGN_CENTER);
         doc.add(urlLine);
         doc.add(new Paragraph(" "));
 
-        Paragraph stepsEn = new Paragraph(
+        Paragraph stepsEn = paragraph(
                 "1. Scan this QR code with your phone camera.\n"
                         + "2. First time: enter your mobile number and 4-digit PIN (sent on WhatsApp at enrolment).\n"
                         + "3. Next visits: one-tap check-in on your bound phone!",
@@ -201,7 +205,7 @@ public class PdfRenderer {
         doc.add(stepsEn);
         doc.add(new Paragraph(" "));
 
-        Paragraph stepsHi = new Paragraph(
+        Paragraph stepsHi = paragraph(
                 "1. अपने फोन कैमरे से इस क्यूआर कोड को स्कैन करें।\n"
                         + "2. पहली बार: अपना मोबाइल नंबर और 4-अंकों का पिन दर्ज करें।\n"
                         + "3. अगली बार से: बस एक टैप में चेक-इन करें!",
@@ -230,11 +234,11 @@ public class PdfRenderer {
         PdfWriter.getInstance(doc, out);
         doc.open();
 
-        Paragraph head = new Paragraph("TRAINER COMMISSION STATEMENT", h1);
+        Paragraph head = paragraph("TRAINER COMMISSION STATEMENT", h1);
         head.setAlignment(Element.ALIGN_CENTER);
         doc.add(head);
 
-        Paragraph gymName = new Paragraph(gym != null ? gym.getName() : "GymKhata", h2);
+        Paragraph gymName = paragraph(gym != null ? gym.getName() : "GymKhata", h2);
         gymName.setAlignment(Element.ALIGN_CENTER);
         doc.add(gymName);
         doc.add(new Paragraph(" "));
@@ -254,7 +258,7 @@ public class PdfRenderer {
         PdfPTable table = new PdfPTable(new float[]{1.5f, 1.5f, 2f, 2.5f, 1.5f});
         table.setWidthPercentage(100);
         for (String h : new String[]{"Date", "Type", "Rule / Trigger", "Reason / Details", "Amount"}) {
-            PdfPCell c = new PdfPCell(new Phrase(h, h2));
+            PdfPCell c = new PdfPCell(phrase(h, h2));
             c.setBorderWidth(0.5f);
             c.setPadding(4);
             table.addCell(c);
@@ -277,16 +281,20 @@ public class PdfRenderer {
 
     private String taxText(Invoice.Line l) {
         if (l.getGstRate() <= 0) {
-            return "-";
+            return "0% (N/A)";
         }
         StringBuilder sb = new StringBuilder();
-        if (l.getIgstPaise() > 0) {
-            sb.append("IGST ₹").append(Money.formatIndian(l.getIgstPaise()));
+        if (l.getIgstPaise() != 0) {
+            sb.append("IGST ₹").append(Money.formatIndian(Math.abs(l.getIgstPaise())));
         } else {
-            sb.append("CGST ₹").append(Money.formatIndian(l.getCgstPaise()))
-                    .append(" + SGST ₹").append(Money.formatIndian(l.getSgstPaise()));
+            sb.append("CGST ₹").append(Money.formatIndian(Math.abs(l.getCgstPaise())))
+                    .append(" + SGST ₹").append(Money.formatIndian(Math.abs(l.getSgstPaise())));
         }
         sb.append(" @").append(l.getGstRate()).append("%");
+        String itc = (l.getItcStatus() != null && !l.getItcStatus().isBlank())
+                ? l.getItcStatus()
+                : (l.getGstRate() == 5 ? "No ITC" : "With ITC");
+        sb.append(" [").append(itc).append("]");
         return sb.toString();
     }
 
@@ -304,8 +312,16 @@ public class PdfRenderer {
         return sb.toString();
     }
 
+    private static Phrase phrase(String text, FontSelector selector) {
+        return selector.process(text == null ? "" : text);
+    }
+
+    private static Paragraph paragraph(String text, FontSelector selector) {
+        return new Paragraph(phrase(text, selector));
+    }
+
     private Paragraph centered(String text) {
-        Paragraph p = new Paragraph(text, small);
+        Paragraph p = paragraph(text, small);
         p.setAlignment(Element.ALIGN_CENTER);
         return p;
     }
@@ -316,15 +332,15 @@ public class PdfRenderer {
 
     private PdfPCell labelValue(String label, String value) {
         PdfPCell c = new PdfPCell();
-        c.addElement(new Phrase(label + ": ", h2));
-        c.addElement(new Phrase(value == null ? "" : value, normal));
+        c.addElement(phrase(label + ": ", h2));
+        c.addElement(phrase(value == null ? "" : value, normal));
         c.setBorderWidth(0.5f);
         c.setPadding(4);
         return c;
     }
 
-    private PdfPCell cell(String text, Font font) {
-        PdfPCell c = new PdfPCell(new Phrase(text == null ? "" : text, font));
+    private PdfPCell cell(String text, FontSelector selector) {
+        PdfPCell c = new PdfPCell(phrase(text, selector));
         c.setBorderWidth(0.5f);
         c.setPadding(4);
         return c;
@@ -336,7 +352,7 @@ public class PdfRenderer {
     }
 
     private PdfPCell empty() {
-        PdfPCell c = new PdfPCell(new Phrase("", normal));
+        PdfPCell c = new PdfPCell(phrase("", normal));
         c.setBorderWidth(0);
         return c;
     }

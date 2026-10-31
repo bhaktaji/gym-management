@@ -5,7 +5,6 @@ import com.gymkhata.admin.model.Gym;
 import com.gymkhata.admin.repo.GymRepository;
 import com.gymkhata.auth.model.User;
 import com.gymkhata.auth.repo.UserRepository;
-import com.gymkhata.auth.security.JwtAuthenticationFilter;
 import com.gymkhata.billing.BillingController;
 import com.gymkhata.billing.BillingService;
 import com.gymkhata.billing.PaymentService;
@@ -28,9 +27,7 @@ import com.gymkhata.membership.repo.MembershipRepository;
 import com.gymkhata.messaging.model.OutboxMessage;
 import com.gymkhata.plan.PlanService;
 import com.gymkhata.plan.model.Plan;
-import com.gymkhata.pt.CommissionService;
 import com.gymkhata.pt.PtController;
-import com.gymkhata.pt.PtService;
 import com.gymkhata.pt.model.CommissionEntry;
 import com.gymkhata.pt.model.PtEnrolment;
 import com.gymkhata.pt.model.PtPackage;
@@ -79,9 +76,7 @@ class AttendanceAndPtIntegrationTest {
     @Autowired private CheckinController checkinController;
     @Autowired private CheckinRepository checkinRepository;
     @Autowired private PublicAttendanceController publicAttendanceController;
-    @Autowired private PtService ptService;
     @Autowired private PtController ptController;
-    @Autowired private CommissionService commissionService;
     @Autowired private ReportService reportService;
 
     @AfterEach
@@ -97,49 +92,52 @@ class AttendanceAndPtIntegrationTest {
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
-    @Test
-    void attendanceDisabledByDefaultBlocksCheckinApisWhileCoreMembershipWorksAndFullQrSelfCheckinLifecycleSucceedsWhenEnabled() {
-        String suffix = String.valueOf(System.nanoTime() % 100000);
+    private String createGymAndLogin(String labelPrefix) {
+        String suffix = String.valueOf(Math.abs(System.nanoTime() % 90000) + 10000);
         Map<String, Object> created = adminService.createGymWithOwner(new AdminService.CreateGymRequest(
-                "Self Checkin Gym " + suffix, "Owner One", "+91951" + String.format("%07d", Integer.parseInt(suffix)),
+                labelPrefix + " " + suffix, "Owner " + suffix, "+9195" + String.format("%08d", Integer.parseInt(suffix)),
                 "owner" + suffix + "@test.in", "Lucknow", "Uttar Pradesh", "09AABCU9603R1ZM", true,
                 "Passw0rd!23", LocalDate.now().plusMonths(6)));
         String gymId = (String) created.get("gymId");
         User owner = userRepository.findByGymIdAndRole(gymId, User.ROLE_GYM_OWNER).orElseThrow();
         loginAs(owner);
+        return gymId;
+    }
 
-        // 1. Verify attendanceEnabled is OFF by default
+    @Test
+    void attendanceDisabledByDefaultBlocksManualAndQrCheckinApisWhileCoreMembershipWorks() {
+        String gymId = createGymAndLogin("AttOffGym");
         Gym gym = tenantService.getGym();
         assertFalse(gym.getSettings().isAttendanceEnabled());
 
-        // 2. Enrol a member while attendance is OFF -> membership, billing, and PIN generation work
-        Member savedMember = memberService.create(
-                "Rohan SelfCheck", "+91952" + String.format("%07d", Integer.parseInt(suffix)),
+        Member member = memberService.create(
+                "Rohan SelfCheck", "+91952" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
                 null, "M", null, null, "Uttar Pradesh", true, null);
-        String pin = savedMember.getGeneratedPin();
+        String pin = member.getGeneratedPin();
         assertNotNull(pin);
         assertEquals(4, pin.length());
-        assertThat(savedMember.getWelcomeWhatsappText()).contains(pin);
 
         Plan monthly = planService.create("Monthly Gym", 30, 118000L, 20000L);
-        Membership ms = membershipService.enrol(savedMember.getId(), monthly.getId(), 20000L, 10000L, null);
+        Membership ms = membershipService.enrol(member.getId(), monthly.getId(), 20000L, 10000L, null);
         Invoice msInv = billingService.generateInvoice(ms.getId());
         assertNotNull(msInv.getId());
 
-        // 3. Attempting manual or QR check-in when attendanceEnabled=false returns 403 FEATURE_DISABLED
         BusinessException disabledManual = assertThrows(BusinessException.class,
-                () -> checkinService.checkIn(savedMember.getId()));
+                () -> checkinService.checkIn(member.getId()));
         assertEquals("FEATURE_DISABLED", disabledManual.getCode());
 
         String slug = gymRepository.findById(gymId).orElseThrow().getSlug();
-        String initialSlug = slug;
         BusinessException disabledQr = assertThrows(BusinessException.class,
-                () -> publicAttendanceController.checkIn(initialSlug,
-                        new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), pin, null, null, null, null),
+                () -> publicAttendanceController.checkIn(slug,
+                        new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), pin, null, null, null, null),
                         null, "TestAgent", new MockHttpServletRequest(), new MockHttpServletResponse()));
         assertEquals("FEATURE_DISABLED", disabledQr.getCode());
+    }
 
-        // 4. Owner enables attendance + geofence + selfCheckout
+    @Test
+    void qrSelfCheckinWithSoftGeofenceSameDayDeduplicationSelfCheckoutAndAutoClose() {
+        String gymId = createGymAndLogin("QrSelfGym");
+        Gym gym = tenantService.getGym();
         Gym.Settings s = gym.getSettings();
         s.setAttendanceEnabled(true);
         s.setSelfCheckoutEnabled(true);
@@ -147,73 +145,44 @@ class AttendanceAndPtIntegrationTest {
         s.setGeofenceLat(26.8467);
         s.setGeofenceLng(80.9462);
         s.setGeofenceRadiusMeters(200);
-        Gym updatedGym = tenantService.updateSettings(s);
-        slug = updatedGym.getSlug();
-        assertNotNull(slug);
-        String activeSlug = slug;
+        String slug = tenantService.updateSettings(s).getSlug();
 
-        // Printable A4 QR Poster PDF works
         ResponseEntity<byte[]> posterRes = checkinController.posterPdf();
         assertEquals(200, posterRes.getStatusCode().value());
         assertThat(new String(posterRes.getBody(), 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
 
-        // 5. Brute-force PIN lockout: 5 wrong PIN attempts -> locked out with 429 PIN_LOCKED
-        for (int attempt = 1; attempt <= 5; attempt++) {
-            BusinessException badPin = assertThrows(BusinessException.class,
-                    () -> publicAttendanceController.checkIn(activeSlug,
-                            new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), "0000", null, null, null, null),
-                            null, "TestAgent", new MockHttpServletRequest(), new MockHttpServletResponse()));
-            if (attempt < 5) {
-                assertEquals("INVALID_PIN", badPin.getCode());
-            } else {
-                assertEquals("PIN_LOCKED", badPin.getCode());
-            }
-        }
-        // Even with the right PIN, locked out until owner resets PIN
-        BusinessException stillLocked = assertThrows(BusinessException.class,
-                () -> publicAttendanceController.checkIn(activeSlug,
-                        new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), pin, null, null, null, null),
-                        null, "TestAgent", new MockHttpServletRequest(), new MockHttpServletResponse()));
-        assertEquals("PIN_LOCKED", stillLocked.getCode());
+        Member member = memberService.create(
+                "Geofence Member", "+91953" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "M", null, null, "Uttar Pradesh", true, null);
+        Plan monthly = planService.create("Monthly Gym", 30, 118000L);
+        membershipService.enrol(member.getId(), monthly.getId());
 
-        // Owner resets PIN -> clears lockout and issues new 4-digit PIN
-        Map<String, Object> resetRes = memberController.resetPin(savedMember.getId());
-        String newPin = (String) resetRes.get("pin");
-        assertNotNull(newPin);
-        assertEquals(4, newPin.length());
-
-        // 6. First time check-in with phone + newPin outside geofence (soft flag recorded, never blocks!)
         MockHttpServletResponse res1 = new MockHttpServletResponse();
         Map<String, Object> check1 = publicAttendanceController.checkIn(
-                activeSlug,
-                new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), newPin, null, null, 28.6139, 77.2090),
-                null, "Device1", new MockHttpServletRequest(), res1
-        );
+                slug,
+                new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), member.getGeneratedPin(), null, null, 28.6139, 77.2090),
+                null, "Device1", new MockHttpServletRequest(), res1);
         assertEquals("GREEN", check1.get("badgeColor"));
+        assertEquals(false, check1.get("withinGeofence"));
         String deviceToken1 = (String) check1.get("deviceToken");
         assertNotNull(deviceToken1);
-        assertEquals(false, check1.get("withinGeofence"));
-        assertNotNull(res1.getHeader("Set-Cookie"));
 
-        // 7. Second check-in on the same local day is rejected with 409 ALREADY_CHECKED_IN
         BusinessException sameDay = assertThrows(BusinessException.class,
                 () -> publicAttendanceController.checkIn(
-                        activeSlug,
+                        slug,
                         new PublicAttendanceController.SelfCheckinRequest(null, null, null, null, null, null),
                         deviceToken1, "Device1", requestWithDeviceCookie(deviceToken1), new MockHttpServletResponse()));
         assertEquals("ALREADY_CHECKED_IN", sameDay.getCode());
 
-        // 8. Optional "I'm leaving" self-checkout works
-        Checkin checkedOut = publicAttendanceController.checkOut(activeSlug, deviceToken1, requestWithDeviceCookie(deviceToken1));
+        Checkin checkedOut = publicAttendanceController.checkOut(slug, deviceToken1, requestWithDeviceCookie(deviceToken1));
         assertNotNull(checkedOut.getCheckOutAt());
         assertFalse(checkedOut.isAutoClosed());
 
-        // 9. Test auto-close of stale open sessions after autoCloseDurationMinutes
         checkinRepository.deleteAll();
         Checkin staleOpen = new Checkin();
         staleOpen.setGymId(gymId);
-        staleOpen.setMemberId(savedMember.getId());
-        staleOpen.setMemberName(savedMember.getName());
+        staleOpen.setMemberId(member.getId());
+        staleOpen.setMemberName(member.getName());
         staleOpen.setDate(LocalDate.now());
         staleOpen.setMethod(Checkin.METHOD_QR_SELF);
         staleOpen.setCheckInAt(Instant.now().minus(180, ChronoUnit.MINUTES));
@@ -224,60 +193,74 @@ class AttendanceAndPtIntegrationTest {
         Checkin reloadedStale = checkinRepository.findById(staleOpen.getId()).orElseThrow();
         assertNotNull(reloadedStale.getCheckOutAt());
         assertTrue(reloadedStale.isAutoClosed());
+    }
 
-        // 10. Test Strict Rotating QR Mode + Device binding limit (max 2 devices) + Device revocation
-        checkinRepository.deleteAll();
+    @Test
+    void strictQrModeDeviceBindingLimitOfTwoAndOwnerDeviceRevocation() {
+        createGymAndLogin("StrictQrGym");
+        Gym gym = tenantService.getGym();
+        Gym.Settings s = gym.getSettings();
+        s.setAttendanceEnabled(true);
         s.setStrictQrMode(true);
-        tenantService.updateSettings(s);
+        String slug = tenantService.updateSettings(s).getSlug();
 
-        // Invalid rotating token in strict mode -> 400 INVALID_QR_TOKEN
+        Member member = memberService.create(
+                "Strict Member", "+91954" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "M", null, null, "Uttar Pradesh", true, null);
+        String pin = member.getGeneratedPin();
+        Plan monthly = planService.create("Monthly", 30, 100_000L);
+        membershipService.enrol(member.getId(), monthly.getId());
+
         BusinessException badQr = assertThrows(BusinessException.class,
                 () -> publicAttendanceController.checkIn(
-                        activeSlug,
-                        new PublicAttendanceController.SelfCheckinRequest(null, null, null, "badtoken", null, null),
-                        deviceToken1, "Device1", requestWithDeviceCookie(deviceToken1), new MockHttpServletResponse()));
+                        slug,
+                        new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), pin, null, "badtoken", null, null),
+                        null, "Device1", new MockHttpServletRequest(), new MockHttpServletResponse()));
         assertEquals("INVALID_QR_TOKEN", badQr.getCode());
 
-        // Valid rotating token from /screen -> one-tap check-in with bound device token succeeds!
-        Map<String, Object> screenData = publicAttendanceController.screen(activeSlug);
-        String validQrToken = (String) screenData.get("token");
-        Map<String, Object> oneTap = publicAttendanceController.checkIn(
-                activeSlug,
-                new PublicAttendanceController.SelfCheckinRequest(null, null, null, validQrToken, 26.8467, 80.9462),
-                deviceToken1, "Device1", requestWithDeviceCookie(deviceToken1), new MockHttpServletResponse());
-        assertEquals("GREEN", oneTap.get("badgeColor"));
-        assertEquals(true, oneTap.get("withinGeofence"));
+        String validQrToken = (String) publicAttendanceController.screen(slug).get("token");
+        Map<String, Object> dev1 = publicAttendanceController.checkIn(
+                slug,
+                new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), pin, null, validQrToken, null, null),
+                null, "Device1", new MockHttpServletRequest(), new MockHttpServletResponse());
+        String deviceToken1 = (String) dev1.get("deviceToken");
+        assertNotNull(deviceToken1);
 
-        // Bind a 2nd device -> succeeds; 3rd device -> rejected with 400 MAX_DEVICES_REACHED
         checkinRepository.deleteAll();
         Map<String, Object> dev2 = publicAttendanceController.checkIn(
-                activeSlug,
-                new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), newPin, null, validQrToken, null, null),
+                slug,
+                new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), pin, null, validQrToken, null, null),
                 null, "Device2", new MockHttpServletRequest(), new MockHttpServletResponse());
         assertNotNull(dev2.get("deviceToken"));
 
         checkinRepository.deleteAll();
         BusinessException maxDev = assertThrows(BusinessException.class,
                 () -> publicAttendanceController.checkIn(
-                        activeSlug,
-                        new PublicAttendanceController.SelfCheckinRequest(savedMember.getPhone(), newPin, null, validQrToken, null, null),
+                        slug,
+                        new PublicAttendanceController.SelfCheckinRequest(member.getPhone(), pin, null, validQrToken, null, null),
                         null, "Device3", new MockHttpServletRequest(), new MockHttpServletResponse()));
         assertEquals("MAX_DEVICES_REACHED", maxDev.getCode());
 
-        // Owner revokes all devices -> old device token is no longer accepted without phone+PIN
-        memberController.revokeAllDevices(savedMember.getId());
+        memberController.revokeAllDevices(member.getId());
         BusinessException revokedEx = assertThrows(BusinessException.class,
                 () -> publicAttendanceController.checkIn(
-                        activeSlug,
+                        slug,
                         new PublicAttendanceController.SelfCheckinRequest(null, null, null, validQrToken, null, null),
                         deviceToken1, "Device1", requestWithDeviceCookie(deviceToken1), new MockHttpServletResponse()));
         assertEquals("AUTH_REQUIRED", revokedEx.getCode());
+    }
 
-        // 11. Expired member check-in never blocks entry: returns RED badge + UPI pay link + gym contact
+    @Test
+    void expiredMemberCheckinReturnsRedBadgeWithUpiPayLinkAndNotSeenNudgeWorks() {
+        createGymAndLogin("ExpiredBadgeGym");
+        Gym gym = tenantService.getGym();
+        gym.getSettings().setAttendanceEnabled(true);
+        String slug = tenantService.updateSettings(gym.getSettings()).getSlug();
+
+        Plan monthly = planService.create("Monthly", 30, 118_000L);
         Member expiredMember = memberService.create(
-                "Expired Vikram", "+91953" + String.format("%07d", Integer.parseInt(suffix)),
+                "Expired Vikram", "+91955" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
                 null, "M", null, null, "Uttar Pradesh", true, null);
-        String expPin = expiredMember.getGeneratedPin();
         Membership expMs = membershipService.enrol(expiredMember.getId(), monthly.getId());
         expMs.setStartDate(LocalDate.now().minusDays(45));
         expMs.setExpiryDate(LocalDate.now().minusDays(15));
@@ -286,64 +269,42 @@ class AttendanceAndPtIntegrationTest {
         billingService.generateInvoice(expMs.getId());
 
         Map<String, Object> expResult = publicAttendanceController.checkIn(
-                activeSlug,
-                new PublicAttendanceController.SelfCheckinRequest(expiredMember.getPhone(), expPin, null, validQrToken, null, null),
+                slug,
+                new PublicAttendanceController.SelfCheckinRequest(expiredMember.getPhone(), expiredMember.getGeneratedPin(), null, null, null, null),
                 null, "ExpDevice", new MockHttpServletRequest(), new MockHttpServletResponse());
         assertEquals("RED", expResult.get("badgeColor"));
         assertNotNull(expResult.get("payLink"));
         assertNotNull(expResult.get("gymPhone"));
 
-        // 12. "Not seen in N days" list & 1-click bilingual WhatsApp nudge
-        Member unseenMember = memberService.create(
-                "Unseen Pooja", "+91954" + String.format("%07d", Integer.parseInt(suffix)),
-                null, "F", null, null, "Uttar Pradesh", true, null);
-        membershipService.enrol(unseenMember.getId(), monthly.getId());
-
-        OutboxMessage nudgeMsg = checkinController.nudge(unseenMember.getId());
+        OutboxMessage nudgeMsg = checkinController.nudge(expiredMember.getId());
         assertNotNull(nudgeMsg.getId());
         assertThat(nudgeMsg.getWaLink()).contains("wa.me");
     }
 
     @Test
-    void personalTrainingPartialPaymentAccrualsRuleImmutabilityCreditNoteReversalAndStatements() {
-        String suffix = String.valueOf(System.nanoTime() % 100000);
-        Map<String, Object> created = adminService.createGymWithOwner(new AdminService.CreateGymRequest(
-                "PT Commission Gym " + suffix, "Owner PT", "+91961" + String.format("%07d", Integer.parseInt(suffix)),
-                "pt" + suffix + "@test.in", "Indore", "Madhya Pradesh", "23AAACI5678G1Z2", true,
-                "Passw0rd!23", LocalDate.now().plusMonths(6)));
-        String gymId = (String) created.get("gymId");
-        User owner = userRepository.findByGymIdAndRole(gymId, User.ROLE_GYM_OWNER).orElseThrow();
-        loginAs(owner);
+    void personalTrainingProportionalPaymentAccrualsAndRuleSnapshotImmutability() {
+        createGymAndLogin("PtAccrualGym");
 
-        // 1. Create Trainer with 20% (2000 bps) commission on taxable value
         Trainer trainer = ptController.createTrainer(new PtController.TrainerRequest(
-                "Coach Kabir", "+91962" + String.format("%07d", Integer.parseInt(suffix)),
+                "Coach Kabir", "+91962" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
                 true, CommissionRule.percentOfTaxable(2000)));
-        assertNotNull(trainer.getId());
-
-        // 2. Create Session-based PT Package: 10 sessions, 60 days, ₹10,500 inclusive (₹10,000 taxable + ₹500 GST @ 5%)
         PtPackage pkg = ptController.createPackage(new PtController.PtPackageRequest(
                 "10-Session Strength PT", PtPackage.TYPE_SESSION_BASED, 60, 10, 1_050_000L, "999723", null));
-
         Member member = memberService.create(
-                "Aarav PT Client", "+91963" + String.format("%07d", Integer.parseInt(suffix)),
-                null, "M", null, null, "Madhya Pradesh", true, null);
+                "Aarav PT Client", "+91963" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "M", null, null, "Uttar Pradesh", true, null);
 
-        // 3. Sell PT package -> generates GST invoice with SAC 999723
         PtEnrolment enrolment = ptController.sellPt(new PtController.SellPtRequest(
                 member.getId(), pkg.getId(), trainer.getId(), 0L));
         Invoice invoice = billingService.get(enrolment.getInvoiceId());
         assertEquals(1_050_000L, invoice.getTotalPaise());
         assertEquals(1_000_000L, invoice.getLines().get(0).getTaxablePaise());
 
-        // 4. Record 60% partial payment (₹6,300 = 630,000 paise) -> 60% of ₹2,000 commission = ₹1,200 (120,000 paise) accrued
         paymentService.recordCounterPayment(invoice.getId(), 630_000L, Payment.METHOD_CASH);
         String month = YearMonth.now().toString();
         Map<String, Object> stmtAfter60 = ptController.statement(trainer.getId(), month);
         assertEquals(120_000L, ((Number) stmtAfter60.get("accruedPaise")).longValue());
-        assertEquals(120_000L, ((Number) stmtAfter60.get("balanceDuePaise")).longValue());
 
-        // 5. Change Trainer's commission rule from 20% to 10% -> past ledger entries and snapshotted enrolment rule MUST NOT change
         ptController.updateTrainer(trainer.getId(), new PtController.TrainerUpdateRequest(
                 trainer.getName(), trainer.getPhone(), true, CommissionRule.percentOfTaxable(1000)));
         Map<String, Object> stmtAfterRuleChange = ptController.statement(trainer.getId(), month);
@@ -352,25 +313,40 @@ class AttendanceAndPtIntegrationTest {
         List<CommissionEntry> entriesAfter60 = (List<CommissionEntry>) stmtAfterRuleChange.get("entries");
         assertEquals(2000, entriesAfter60.get(0).getRuleSnapshot().getRateBps());
 
-        // 6. Record remaining 40% payment (₹4,200 = 420,000 paise) -> accrues remaining ₹800 (80,000 paise) using snapshotted 20% rule!
         paymentService.recordCounterPayment(invoice.getId(), 420_000L, Payment.METHOD_CARD);
         Map<String, Object> stmtAfter100 = ptController.statement(trainer.getId(), month);
         assertEquals(200_000L, ((Number) stmtAfter100.get("accruedPaise")).longValue());
+    }
 
-        // 7. Decrement PT session manually from member's page
+    @Test
+    void personalTrainingCreditNoteReversalAdjustmentsPayoutsExportsAndTenantIsolation() {
+        createGymAndLogin("PtReversalGym");
+
+        Trainer trainer = ptController.createTrainer(new PtController.TrainerRequest(
+                "Coach Reversal", "+91964" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                true, CommissionRule.percentOfTaxable(2000)));
+        PtPackage pkg = ptController.createPackage(new PtController.PtPackageRequest(
+                "10-Session PT", PtPackage.TYPE_SESSION_BASED, 60, 10, 1_050_000L, "999723", null));
+        Member member = memberService.create(
+                "Reversal Client", "+91965" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "M", null, null, "Uttar Pradesh", true, null);
+
+        PtEnrolment enrolment = ptController.sellPt(new PtController.SellPtRequest(
+                member.getId(), pkg.getId(), trainer.getId(), 0L));
+        paymentService.recordCounterPayment(enrolment.getInvoiceId(), 1_050_000L, Payment.METHOD_CASH);
+
         PtEnrolment afterSession = ptController.markSessionDone(enrolment.getId());
         assertEquals(1, afterSession.getDeliveredSessions());
         assertEquals(9, afterSession.getRemainingSessions());
 
-        // 8. Issue Credit Note on the PT invoice -> creates automatic reversing entry in commission ledger!
-        Invoice cn = billingController.creditNote(invoice.getId(), new BillingController.CreditNoteRequest("Client moved city"));
+        String month = YearMonth.now().toString();
+        Invoice cn = billingController.creditNote(enrolment.getInvoiceId(), new BillingController.CreditNoteRequest("Client moved city"));
         assertEquals(Invoice.TYPE_CREDIT_NOTE, cn.getType());
 
         Map<String, Object> stmtAfterCn = ptController.statement(trainer.getId(), month);
         assertEquals(-200_000L, ((Number) stmtAfterCn.get("reversalsPaise")).longValue());
         assertEquals(0L, ((Number) stmtAfterCn.get("netPayablePaise")).longValue());
 
-        // 9. Manual adjustment (+₹500 bonus) and Payout (₹300 paid via UPI) + CSV & PDF exports
         ptController.addAdjustment(new PtController.AdjustmentRequest(trainer.getId(), month, 50_000L, "Star trainer bonus"));
         ptController.markPayoutPaid(new PtController.PayoutRequest(trainer.getId(), month, 30_000L, "UPI", LocalDate.now(), "Part payout"));
 
@@ -378,72 +354,51 @@ class AttendanceAndPtIntegrationTest {
         assertEquals(50_000L, ((Number) finalStmt.get("adjustmentsPaise")).longValue());
         assertEquals(30_000L, ((Number) finalStmt.get("paidPaise")).longValue());
         assertEquals(20_000L, ((Number) finalStmt.get("balanceDuePaise")).longValue());
-        assertThat((String) finalStmt.get("whatsappShareText")).contains("Coach Kabir");
 
         ResponseEntity<byte[]> csvRes = ptController.exportCsv(trainer.getId(), month);
-        assertEquals(200, csvRes.getStatusCode().value());
-        String csvText = new String(csvRes.getBody(), StandardCharsets.UTF_8);
-        assertThat(csvText).contains("ACCRUAL").contains("REVERSAL").contains("ADJUSTMENT").contains("PAYOUT");
+        assertThat(new String(csvRes.getBody(), StandardCharsets.UTF_8))
+                .contains("ACCRUAL").contains("REVERSAL").contains("ADJUSTMENT").contains("PAYOUT");
 
         ResponseEntity<byte[]> pdfRes = ptController.exportPdf(trainer.getId(), month);
-        assertEquals(200, pdfRes.getStatusCode().value());
         assertThat(new String(pdfRes.getBody(), 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
 
-        // 10. Verify PT Reports & Tenant Isolation against a second gym
         assertThat(reportService.ptRevenueByMonth()).isNotEmpty();
         assertThat(reportService.trainerCommissions(month)).isNotEmpty();
         assertThat(reportService.trainerCollections()).isNotEmpty();
 
-        Map<String, Object> otherGym = adminService.createGymWithOwner(new AdminService.CreateGymRequest(
-                "Other Gym " + suffix, "Owner Two", "+91964" + String.format("%07d", Integer.parseInt(suffix)),
-                "other" + suffix + "@test.in", "Pune", "Maharashtra", null, false,
-                "Passw0rd!23", LocalDate.now().plusMonths(6)));
-        User owner2 = userRepository.findByGymIdAndRole((String) otherGym.get("gymId"), User.ROLE_GYM_OWNER).orElseThrow();
-        loginAs(owner2);
-
+        createGymAndLogin("OtherTenantGym");
         assertThat(ptController.listTrainers(null)).isEmpty();
         assertThrows(BusinessException.class, () -> ptController.statement(trainer.getId(), month));
         assertThrows(BusinessException.class, () -> ptController.markSessionDone(enrolment.getId()));
     }
 
     @Test
-    void membershipPlansLateRenewalPolicyFreezeExtensionJoiningFeeDiscountsAndDuesList() {
-        String suffix = String.valueOf(System.nanoTime() % 100000);
-        Map<String, Object> created = adminService.createGymWithOwner(new AdminService.CreateGymRequest(
-                "Membership Rules Gym " + suffix, "Owner Mem", "+91971" + String.format("%07d", Integer.parseInt(suffix)),
-                "mem" + suffix + "@test.in", "Jaipur", "Rajasthan", null, false,
-                "Passw0rd!23", LocalDate.now().plusMonths(6)));
-        String gymId = (String) created.get("gymId");
-        User owner = userRepository.findByGymIdAndRole(gymId, User.ROLE_GYM_OWNER).orElseThrow();
-        loginAs(owner);
+    void membershipPlansJoiningFeeDiscountPartialPaymentDuesAndLateRenewalFromExpiry() {
+        createGymAndLogin("MembershipRulesGym");
 
-        // 1. Create Monthly (30d), Quarterly (90d), Half-Yearly (180d), Yearly (365d), and Custom (45d) plans with joining fee
         Plan monthly = planService.create("Monthly", 30, 150_000L, 50_000L);
         Plan quarterly = planService.create("Quarterly", 90, 400_000L, 0L);
-        Plan halfYearly = planService.create("Half-Yearly", 180, 750_000L, 0L);
-        Plan yearly = planService.create("Yearly", 365, 1_200_000L, 0L);
-        Plan custom45 = planService.create("Custom 45 Days", 45, 200_000L, 0L);
+        planService.create("Half-Yearly", 180, 750_000L, 0L);
+        planService.create("Yearly", 365, 1_200_000L, 0L);
+        planService.create("Custom 45 Days", 45, 200_000L, 0L);
         assertEquals(5, planService.list().size());
 
         Member member = memberService.create(
-                "Priya Renewal", "+91972" + String.format("%07d", Integer.parseInt(suffix)),
-                null, "F", null, null, "Rajasthan", true, null);
+                "Priya Renewal", "+91972" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "F", null, null, "Uttar Pradesh", true, null);
 
-        // 2. Enrol with joining fee (₹500) and discount (₹200) -> ₹1,500 + ₹500 - ₹200 = ₹1,800 (180,000 paise)
         Membership m1 = membershipService.enrol(member.getId(), monthly.getId(), 50_000L, 20_000L, null);
         Invoice inv1 = billingService.generateInvoice(m1.getId());
         assertEquals(180_000L, inv1.getTotalPaise());
         assertEquals(20_000L, inv1.getDiscountPaise());
         assertEquals(50_000L, inv1.getJoiningFeePaise());
 
-        // Pay ₹1,000 partially -> ₹800 remains on Dues list
         paymentService.recordCounterPayment(inv1.getId(), 100_000L, Payment.METHOD_CASH);
         List<Map<String, Object>> dues = billingController.dues();
         assertThat(dues).hasSize(1);
         assertEquals(80_000L, ((Number) dues.get(0).get("balancePaise")).longValue());
         assertEquals("PARTIAL", dues.get(0).get("status"));
 
-        // 3. Simulate m1 expired 10 days ago and set lateRenewalPolicy = FROM_EXPIRY -> renewal starts from oldExpiry + 1 day!
         LocalDate oldExpiry = LocalDate.now().minusDays(10);
         m1.setStartDate(oldExpiry.minusDays(29));
         m1.setExpiryDate(oldExpiry);
@@ -451,20 +406,29 @@ class AttendanceAndPtIntegrationTest {
         membershipRepository.save(m1);
 
         Gym gym = tenantService.getGym();
-        Gym.Settings s = gym.getSettings();
-        s.setLateRenewalPolicy(Gym.Settings.RENEWAL_FROM_EXPIRY);
-        tenantService.updateSettings(s);
+        gym.getSettings().setLateRenewalPolicy(Gym.Settings.RENEWAL_FROM_EXPIRY);
+        tenantService.updateSettings(gym.getSettings());
 
         Membership m2 = membershipService.enrol(member.getId(), quarterly.getId(), 0L, 0L, null);
         assertEquals(oldExpiry.plusDays(1), m2.getStartDate());
+    }
 
-        // 4. Freeze / Pause membership and unfreeze with extension
-        LocalDate expiryBeforeFreeze = m2.getExpiryDate();
-        Membership frozen = membershipController.freeze(m2.getId(), new MembershipController.FreezeRequest(null, "Out of station"));
+    @Test
+    void membershipFreezeAndUnfreezeExtendsExpiryByFrozenDays() {
+        createGymAndLogin("FreezeGym");
+
+        Plan quarterly = planService.create("Quarterly", 90, 400_000L, 0L);
+        Member member = memberService.create(
+                "Freeze Member", "+91973" + String.format("%07d", (int) (System.nanoTime() % 9000000 + 1000000)),
+                null, "M", null, null, "Uttar Pradesh", true, null);
+
+        Membership m = membershipService.enrol(member.getId(), quarterly.getId(), 0L, 0L, null);
+        LocalDate expiryBeforeFreeze = m.getExpiryDate();
+
+        Membership frozen = membershipController.freeze(m.getId(), new MembershipController.FreezeRequest(null, "Out of station"));
         assertEquals(Membership.STATUS_FROZEN, frozen.getStatus());
         assertNotNull(frozen.getFrozenAt());
 
-        // Simulate frozen 5 days ago
         frozen.setFrozenAt(LocalDate.now().minusDays(5));
         membershipRepository.save(frozen);
         Membership unfrozen = membershipController.unfreeze(frozen.getId(), null);

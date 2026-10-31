@@ -6,6 +6,13 @@ import { api, ApiError } from '../../lib/api'
 import { formatDate, formatMoney } from '../../lib/format'
 import { Badge, Card, ErrorNote, Field, Loader, PageHeader, SuccessNote } from '../../components/ui'
 
+type GstItemRule = {
+  sac?: string
+  gstRate?: number
+  effectiveFrom?: string
+  itcStatus?: string
+}
+
 type Gym = {
   id: string
   code?: string
@@ -42,6 +49,7 @@ type Gym = {
     commissionTrigger?: string
     membershipReferralCommissionEnabled?: boolean
     ptSacCode?: string
+    gstRules?: Record<string, GstItemRule>
   }
 }
 
@@ -52,6 +60,12 @@ type PlanUsage = {
   perMemberFee: number
   perMessageFee: number
   usage: { members: number; plans: number }
+}
+
+const DEFAULT_GST_RULES: Record<string, GstItemRule> = {
+  MEMBERSHIP: { sac: '999723', gstRate: 5, effectiveFrom: '2025-09-22', itcStatus: 'NO_ITC' },
+  PT: { sac: '999723', gstRate: 5, effectiveFrom: '2025-09-22', itcStatus: 'NO_ITC' },
+  ADMISSION_FEE: { sac: '999723', gstRate: 5, effectiveFrom: '2025-09-22', itcStatus: 'NO_ITC' },
 }
 
 export function Settings() {
@@ -103,6 +117,7 @@ export function Settings() {
   const [commissionTrigger, setCommissionTrigger] = useState('ON_PAYMENT')
   const [membershipReferralCommissionEnabled, setMembershipReferralCommissionEnabled] = useState(false)
   const [ptSacCode, setPtSacCode] = useState('999723')
+  const [gstRules, setGstRules] = useState<Record<string, GstItemRule>>(DEFAULT_GST_RULES)
 
   useEffect(() => {
     if (gym.data) {
@@ -134,8 +149,20 @@ export function Settings() {
       setCommissionTrigger(s?.commissionTrigger ?? 'ON_PAYMENT')
       setMembershipReferralCommissionEnabled(Boolean(s?.membershipReferralCommissionEnabled))
       setPtSacCode(s?.ptSacCode ?? '999723')
+      setGstRules({
+        MEMBERSHIP: { ...DEFAULT_GST_RULES.MEMBERSHIP, ...(s?.gstRules?.MEMBERSHIP ?? {}) },
+        PT: { ...DEFAULT_GST_RULES.PT, sac: s?.ptSacCode ?? '999723', ...(s?.gstRules?.PT ?? {}) },
+        ADMISSION_FEE: { ...DEFAULT_GST_RULES.ADMISSION_FEE, ...(s?.gstRules?.ADMISSION_FEE ?? {}) },
+      })
     }
   }, [gym.data])
+
+  const updateGstRule = (itemType: string, patch: Partial<GstItemRule>) => {
+    setGstRules((prev) => ({
+      ...prev,
+      [itemType]: { ...prev[itemType], ...patch },
+    }))
+  }
 
   const saveProfile = useMutation({
     mutationFn: () =>
@@ -172,7 +199,8 @@ export function Settings() {
           lateRenewalPolicy,
           commissionTrigger,
           membershipReferralCommissionEnabled,
-          ptSacCode: ptSacCode || '999723',
+          ptSacCode: gstRules.PT?.sac || ptSacCode || '999723',
+          gstRules,
         },
       }),
     onSuccess: () => {
@@ -369,12 +397,68 @@ export function Settings() {
           </Field>
         </div>
 
-        <Field
-          label={t('settings.ptSacCode')}
-          hint="Default SAC 999723. Note: GST rate & SAC classification for Personal Training should be confirmed with your Chartered Accountant (CA)."
-        >
-          <input className="input font-mono" value={ptSacCode} onChange={(e) => setPtSacCode(e.target.value)} />
-        </Field>
+        <div className="border-t border-slate-100 pt-3 mt-2 mb-4" data-testid="gst-item-rules-section">
+          <h3 className="text-sm font-semibold text-slate-900">
+            GST Rate, SAC &amp; Effective Date per Item Type
+          </h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Defaults: SAC 999723, 5% (No ITC) effective 2025-09-22 (18% With ITC prior) — confirm with your Chartered Accountant (CA).
+          </p>
+          <div className="space-y-3">
+            {(['MEMBERSHIP', 'PT', 'ADMISSION_FEE'] as const).map((itemType) => {
+              const rule = gstRules[itemType] ?? DEFAULT_GST_RULES[itemType]
+              return (
+                <div
+                  key={itemType}
+                  data-testid={`gst-rule-${itemType}`}
+                  className="rounded-lg border border-slate-200 p-3 bg-slate-50/60"
+                >
+                  <p className="text-xs font-semibold text-slate-800 mb-2">{itemType}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <Field label="SAC Code">
+                      <input
+                        className="input font-mono text-xs"
+                        value={rule.sac ?? '999723'}
+                        onChange={(e) => {
+                          updateGstRule(itemType, { sac: e.target.value })
+                          if (itemType === 'PT') setPtSacCode(e.target.value)
+                        }}
+                      />
+                    </Field>
+                    <Field label="GST Rate (%)">
+                      <input
+                        type="number"
+                        className="input text-xs"
+                        min={0}
+                        max={28}
+                        value={rule.gstRate ?? 5}
+                        onChange={(e) => updateGstRule(itemType, { gstRate: Number(e.target.value) })}
+                      />
+                    </Field>
+                    <Field label="Effective Date">
+                      <input
+                        type="date"
+                        className="input text-xs"
+                        value={rule.effectiveFrom ?? '2025-09-22'}
+                        onChange={(e) => updateGstRule(itemType, { effectiveFrom: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="ITC Status">
+                      <select
+                        className="input text-xs"
+                        value={rule.itcStatus ?? 'No ITC'}
+                        onChange={(e) => updateGstRule(itemType, { itcStatus: e.target.value })}
+                      >
+                        <option value="No ITC">No ITC</option>
+                        <option value="With ITC">With ITC</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         <label className="flex items-center gap-2 text-sm text-slate-700 mb-4">
           <input

@@ -41,7 +41,10 @@ public class Member {
     private String pinHash;
     private int pinFailedAttempts;
     private Instant pinLockedUntil;
+    private List<Instant> unboundPinFailureTimestamps = new ArrayList<>();
+    private boolean unboundPinBudgetExhausted;
     private List<BoundDevice> boundDevices = new ArrayList<>();
+    private List<PendingDeviceRequest> pendingDeviceRequests = new ArrayList<>();
 
     @Transient
     private String generatedPin;
@@ -187,6 +190,25 @@ public class Member {
         this.pinLockedUntil = pinLockedUntil;
     }
 
+    public List<Instant> getUnboundPinFailureTimestamps() {
+        if (unboundPinFailureTimestamps == null) {
+            unboundPinFailureTimestamps = new ArrayList<>();
+        }
+        return unboundPinFailureTimestamps;
+    }
+
+    public void setUnboundPinFailureTimestamps(List<Instant> unboundPinFailureTimestamps) {
+        this.unboundPinFailureTimestamps = unboundPinFailureTimestamps;
+    }
+
+    public boolean isUnboundPinBudgetExhausted() {
+        return unboundPinBudgetExhausted;
+    }
+
+    public void setUnboundPinBudgetExhausted(boolean unboundPinBudgetExhausted) {
+        this.unboundPinBudgetExhausted = unboundPinBudgetExhausted;
+    }
+
     public List<BoundDevice> getBoundDevices() {
         if (boundDevices == null) {
             boundDevices = new ArrayList<>();
@@ -196,6 +218,17 @@ public class Member {
 
     public void setBoundDevices(List<BoundDevice> boundDevices) {
         this.boundDevices = boundDevices;
+    }
+
+    public List<PendingDeviceRequest> getPendingDeviceRequests() {
+        if (pendingDeviceRequests == null) {
+            pendingDeviceRequests = new ArrayList<>();
+        }
+        return pendingDeviceRequests;
+    }
+
+    public void setPendingDeviceRequests(List<PendingDeviceRequest> pendingDeviceRequests) {
+        this.pendingDeviceRequests = pendingDeviceRequests;
     }
 
     public String getGeneratedPin() {
@@ -277,6 +310,66 @@ public class Member {
 
         public void setBoundAt(Instant boundAt) {
             this.boundAt = boundAt;
+        }
+    }
+
+    public static class PendingDeviceRequest {
+        private String requestId;
+        @JsonIgnore
+        private String tokenHash;
+        private String userAgent;
+        private String clientIp;
+        private Instant requestedAt;
+
+        public PendingDeviceRequest() {
+        }
+
+        public PendingDeviceRequest(String requestId, String tokenHash, String userAgent, String clientIp, Instant requestedAt) {
+            this.requestId = requestId;
+            this.tokenHash = tokenHash;
+            this.userAgent = userAgent;
+            this.clientIp = clientIp;
+            this.requestedAt = requestedAt;
+        }
+
+        public String getRequestId() {
+            return requestId;
+        }
+
+        public void setRequestId(String requestId) {
+            this.requestId = requestId;
+        }
+
+        public String getTokenHash() {
+            return tokenHash;
+        }
+
+        public void setTokenHash(String tokenHash) {
+            this.tokenHash = tokenHash;
+        }
+
+        public String getUserAgent() {
+            return userAgent;
+        }
+
+        public void setUserAgent(String userAgent) {
+            this.userAgent = userAgent;
+        }
+
+        public String getClientIp() {
+            return clientIp;
+        }
+
+        public void setClientIp(String clientIp) {
+            this.clientIp = clientIp;
+        }
+
+        public Instant getRequestedAt() {
+            return requestedAt;
+        }
+
+        public void setRequestedAt(Instant requestedAt) {
+            this.requestedAt = requestedAt;
         }
     }
 }

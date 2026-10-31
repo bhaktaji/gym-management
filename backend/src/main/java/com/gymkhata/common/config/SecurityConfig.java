@@ -71,7 +71,7 @@ public class SecurityConfig {
                     // API surface
                     auth.requestMatchers("/api/v1/admin/**").hasRole("SUPER_ADMIN");
                     auth.requestMatchers("/api/v1/auth/logout", "/api/v1/auth/change-password").authenticated();
-                    auth.requestMatchers("/api/v1/auth/**", "/api/v1/config/**", "/api/v1/pay/**", "/api/v1/public/attendance/**").permitAll();
+                    auth.requestMatchers("/api/v1/auth/**", "/api/v1/config/**", "/api/v1/build-info", "/api/v1/pay/**", "/api/v1/public/attendance/**").permitAll();
                     auth.requestMatchers("/api/**").authenticated();
 
                     // Ops & OpenAPI endpoints: only /actuator/health is public in prod; Swagger is SUPER_ADMIN-only in prod

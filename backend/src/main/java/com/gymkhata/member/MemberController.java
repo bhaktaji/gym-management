@@ -89,6 +89,18 @@ public class MemberController {
         return memberService.revokeDevice(id, deviceId);
     }
 
+    @PostMapping("/{id}/pending-devices/{requestId}/approve")
+    @Operation(summary = "Approve a pending check-in device binding request")
+    public Member approvePendingDevice(@PathVariable String id, @PathVariable String requestId) {
+        return memberService.approvePendingDevice(id, requestId);
+    }
+
+    @DeleteMapping("/{id}/pending-devices/{requestId}")
+    @Operation(summary = "Reject a pending check-in device binding request")
+    public Member rejectPendingDevice(@PathVariable String id, @PathVariable String requestId) {
+        return memberService.rejectPendingDevice(id, requestId);
+    }
+
     @GetMapping("/{id}/export")
     @Operation(summary = "DPDP: export all member data as JSON")
     public Map<String, Object> exportData(@PathVariable String id) {

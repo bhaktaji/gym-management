@@ -1006,8 +1006,8 @@ public class DemoDataSeeder implements ApplicationRunner {
         inv.setCreatedAt(issueDate.atTime(11, 0).atZone(IST).toInstant());
         inv.setCreatedBy(owner.getId());
 
-        Invoice.Line l1 = buildLine("Membership - Starter Monthly", planPaise, gym.isGstRegistered(), gym.getState(), placeOfSupplyState);
-        Invoice.Line l2 = buildLine("One-Time Joining Fee", joiningFeePaise, gym.isGstRegistered(), gym.getState(), placeOfSupplyState);
+        Invoice.Line l1 = buildLine("MEMBERSHIP", "Membership - Starter Monthly", planPaise, gym.isGstRegistered(), gym.getState(), placeOfSupplyState);
+        Invoice.Line l2 = buildLine("ADMISSION_FEE", "One-Time Joining Fee", joiningFeePaise, gym.isGstRegistered(), gym.getState(), placeOfSupplyState);
         long total = planPaise + joiningFeePaise;
         inv.setLines(List.of(l1, l2));
         inv.setTotalPaise(total);
@@ -1018,24 +1018,33 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private Invoice.Line buildLine(String description, long inclusivePaise, boolean gstRegistered,
                                    String supplierState, String placeOfSupplyState) {
+        return buildLine("MEMBERSHIP", description, inclusivePaise, gstRegistered, supplierState, placeOfSupplyState);
+    }
+
+    private Invoice.Line buildLine(String itemType, String description, long inclusivePaise, boolean gstRegistered,
+                                   String supplierState, String placeOfSupplyState) {
         Invoice.Line line = new Invoice.Line();
+        line.setItemType(itemType);
         line.setDescription(description);
         line.setQuantity(1);
         line.setRatePaise(inclusivePaise);
         line.setTotalPaise(inclusivePaise);
         if (gstRegistered) {
             line.setSac("999723");
-            line.setGstRate(18);
+            line.setGstRate(5);
+            line.setItcStatus("No ITC");
+            line.setGstEffectiveFrom("2025-09-22");
             boolean interState = placeOfSupplyState != null && !placeOfSupplyState.equalsIgnoreCase(supplierState);
             GstCalculator.Breakdown b = interState
-                    ? GstCalculator.splitInterstate(inclusivePaise, 18)
-                    : GstCalculator.split(inclusivePaise, 18);
+                    ? GstCalculator.splitInterstate(inclusivePaise, 5)
+                    : GstCalculator.split(inclusivePaise, 5);
             line.setTaxablePaise(b.taxablePaise());
             line.setCgstPaise(b.cgstPaise());
             line.setSgstPaise(b.sgstPaise());
             line.setIgstPaise(b.igstPaise());
         } else {
             line.setGstRate(0);
+            line.setItcStatus("N/A");
             line.setTaxablePaise(inclusivePaise);
             line.setCgstPaise(0);
             line.setSgstPaise(0);
@@ -1068,12 +1077,15 @@ public class DemoDataSeeder implements ApplicationRunner {
         List<Invoice.Line> lines = new ArrayList<>();
         for (Invoice.Line l : original.getLines()) {
             Invoice.Line cl = new Invoice.Line();
+            cl.setItemType(l.getItemType());
             cl.setDescription("Credit note for " + original.getInvoiceNumber() + " - " + l.getDescription());
             cl.setSac(l.getSac());
             cl.setQuantity(l.getQuantity());
             cl.setRatePaise(-l.getRatePaise());
             cl.setTaxablePaise(-l.getTaxablePaise());
             cl.setGstRate(l.getGstRate());
+            cl.setItcStatus(l.getItcStatus());
+            cl.setGstEffectiveFrom(l.getGstEffectiveFrom());
             cl.setCgstPaise(-l.getCgstPaise());
             cl.setSgstPaise(-l.getSgstPaise());
             cl.setIgstPaise(-l.getIgstPaise());

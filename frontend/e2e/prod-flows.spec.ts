@@ -319,4 +319,95 @@ test.describe('Production Readiness E2E Suite (Real Backend + MongoDB)', () => {
     await page.screenshot({ path: 'screenshots/dashboard-attendance-on.png' })
   })
 
+  test('(g) Real Backend Packaged JAR Walkthrough: build-info footer, PWA SW immediate takeover, all 3 demo owners, Attendance ON page, PT & Commissions, /g/bajrang-lko/in, and Hindi Invoice PDF', async ({ page }) => {
+    // 1. Verify /api/v1/build-info and footer
+    await page.goto('/login')
+    const buildInfo = await page.evaluate(async () => {
+      const r = await fetch('/api/v1/build-info')
+      return await r.json()
+    })
+    expect(buildInfo.commitHash).toBeTruthy()
+    expect(buildInfo.buildTime).toBeTruthy()
+
+    // 2. Unregister any old SW, clear caches, re-register /sw.js and verify immediate takeover (skipWaiting + clientsClaim) without manual refresh
+    const swTakeover = await page.evaluate(async () => {
+      if (!('serviceWorker' in navigator)) return { supported: false, controlled: false }
+      const regs = await navigator.serviceWorker.getRegistrations()
+      for (const r of regs) await r.unregister()
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        for (const k of keys) await caches.delete(k)
+      }
+      const reg = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+      // Wait briefly for clientsClaim controllerchange if not already set
+      if (!navigator.serviceWorker.controller) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 1500)
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            clearTimeout(t)
+            resolve()
+          }, { once: true })
+        })
+      }
+      return {
+        supported: true,
+        activeState: reg.active?.state,
+        controlled: Boolean(navigator.serviceWorker.controller),
+        scriptURL: navigator.serviceWorker.controller?.scriptURL || reg.active?.scriptURL || '',
+      }
+    })
+    expect(swTakeover.supported).toBe(true)
+    expect(swTakeover.activeState).toBe('activated')
+    expect(swTakeover.controlled).toBe(true)
+
+    // 3. Login as BAJRANG-LKO (Attendance ON) -> Dashboard, Footer, Attendance page, PT & Commissions, Billing
+    await page.fill('input[inputmode="tel"]', '+919810010001')
+    await page.fill('input[type="password"]', 'DemoOwner@2026')
+    await page.click('button[type="submit"]')
+    await page.waitForURL('**/app')
+    await page.waitForSelector('h1')
+    await expect(page.locator('[data-testid="build-info-footer"]')).toContainText(buildInfo.commitHash)
+    await page.screenshot({ path: 'screenshots/dashboard-bajrang-on.png', fullPage: true })
+
+    await page.goto('/app/checkins')
+    await page.waitForSelector('h1')
+    await page.screenshot({ path: 'screenshots/attendance-page-on.png', fullPage: true })
+
+    await page.goto('/app/pt')
+    await page.waitForSelector('h1')
+    await page.screenshot({ path: 'screenshots/pt-and-commissions.png', fullPage: true })
+
+    await page.goto('/app/billing')
+    await page.waitForSelector('h1')
+    await page.screenshot({ path: 'screenshots/billing-invoices.png', fullPage: true })
+
+    // 4. Public /g/bajrang-lko/in self-check-in screen
+    await page.goto('/g/bajrang-lko/in')
+    await page.waitForSelector('h1')
+    await page.screenshot({ path: 'screenshots/self-checkin-bajrang.png', fullPage: true })
+
+    // 5. Login as IRONCORE-IND (+919810010002, Attendance OFF) -> Dashboard
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/login')
+    await page.fill('input[inputmode="tel"]', '+919810010002')
+    await page.fill('input[type="password"]', 'DemoOwner@2026')
+    await page.click('button[type="submit"]')
+    await page.waitForURL('**/app')
+    await page.waitForSelector('h1')
+    await expect(page.locator('[data-testid="build-info-footer"]')).toContainText(buildInfo.commitHash)
+    await page.screenshot({ path: 'screenshots/dashboard-ironcore-off.png', fullPage: true })
+
+    // 6. Login as SURYA-JPR (+919810010003, Attendance OFF) -> Dashboard
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/login')
+    await page.fill('input[inputmode="tel"]', '+919810010003')
+    await page.fill('input[type="password"]', 'DemoOwner@2026')
+    await page.click('button[type="submit"]')
+    await page.waitForURL('**/app')
+    await page.waitForSelector('h1')
+    await expect(page.locator('[data-testid="build-info-footer"]')).toContainText(buildInfo.commitHash)
+    await page.screenshot({ path: 'screenshots/dashboard-surya-off.png', fullPage: true })
+  })
+
 })

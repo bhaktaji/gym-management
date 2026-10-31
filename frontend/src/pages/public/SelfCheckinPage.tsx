@@ -15,6 +15,9 @@ type PublicAttendanceInfo = {
   deviceBound: boolean
   boundMemberId?: string
   boundMemberName?: string
+  devicePendingApproval?: boolean
+  pendingMemberName?: string
+  pendingRequestId?: string
 }
 
 type PtEnrolmentSummary = {
@@ -28,7 +31,8 @@ type PtEnrolmentSummary = {
 }
 
 type SelfCheckinResult = {
-  checkinId: string
+  checkinId?: string | null
+  status?: string
   memberId: string
   memberName: string
   gymName: string
@@ -44,6 +48,8 @@ type SelfCheckinResult = {
   selfCheckoutEnabled: boolean
   activePtEnrolments?: PtEnrolmentSummary[]
   deviceToken?: string
+  deviceBound?: boolean
+  pendingRequestId?: string
 }
 
 export function SelfCheckinPage() {
@@ -163,7 +169,33 @@ export function SelfCheckinPage() {
           {checkedOutMsg ? <div className="mb-3"><SuccessNote message={checkedOutMsg} /></div> : null}
           {ptDoneMsg ? <div className="mb-3"><SuccessNote message={ptDoneMsg} /></div> : null}
 
-          {result ? (
+          {result?.status === 'PENDING_OWNER_APPROVAL' || gymInfo.devicePendingApproval ? (
+            <div
+              data-testid="self-checkin-pending-approval"
+              className="rounded-xl p-4 border bg-amber-50 border-amber-300 text-amber-950 space-y-2"
+            >
+              <p className="text-xs uppercase font-bold tracking-wider opacity-75">
+                Device Verification Required
+              </p>
+              <p className="text-base font-bold" data-testid="self-checkin-status-message">
+                {result?.statusMessage ??
+                  'New device binding requires gym owner approval due to recent failed PIN attempts on this phone.'}
+              </p>
+              <p className="text-xs text-amber-900">
+                Please ask the front desk or gym owner ({gymInfo.gymPhone}) to approve this device on your member profile.
+              </p>
+              <button
+                type="button"
+                className="text-xs text-amber-900 underline w-full text-center pt-2"
+                onClick={() => {
+                  setResult(null)
+                  void info.refetch()
+                }}
+              >
+                Check approval status again
+              </button>
+            </div>
+          ) : result ? (
             <div
               data-testid="self-checkin-result"
               data-badge={result.badge}

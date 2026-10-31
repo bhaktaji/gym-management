@@ -18,7 +18,7 @@ When you enrol a new member on `/app/members`:
 2. **Shown Once:** The PIN is displayed to you immediately in a welcome banner with a pre-filled WhatsApp welcome message.
 3. **WhatsApp Welcome:** Tap the WhatsApp button to send the welcome text to the member:
    > *"Welcome to PowerFit Gym, Rohan! Your 4-digit self check-in PIN is 4821. Scan the QR at /g/powerfit-gym/in to check in."*
-4. **PIN Reset & Instant Lockout Reset:** If a member forgets their PIN or gets locked out after **5 failed attempts** (`CheckinService.MAX_PIN_ATTEMPTS = 5`), click **Reset PIN** (`POST /api/v1/members/{id}/reset-pin`) or unlock them (`POST /api/v1/members/{id}/reset-pin-lockout`) on their profile. This immediately clears their lockout across all IPs/devices.
+4. **PIN Reset, Per-Phone Unbound Budget & Instant Lockout Reset:** If a member forgets their PIN or gets locked out after **5 failed attempts** per IP (`CheckinService.MAX_PIN_ATTEMPTS = 5`), or if **20 failed attempts across rotating IPs in 24 hours** (`CheckinService.MAX_UNBOUND_PHONE_FAILURES_24H = 20`) trigger owner-approval mode for new devices (`PENDING_OWNER_APPROVAL`), you can approve their pending device (`POST /api/v1/members/{id}/pending-devices/{requestId}/approve`), click **Reset PIN** (`POST /api/v1/members/{id}/reset-pin`), or unlock them (`POST /api/v1/members/{id}/reset-pin-lockout`) on their profile. Members with an already-bound device can continue checking in uninterrupted even during an attack.
 
 ## 3. Self-Service QR Attendance (Optional)
 Enable attendance under **Settings → Self-Service QR Entry & Visits**:
@@ -27,9 +27,9 @@ Enable attendance under **Settings → Self-Service QR Entry & Visits**:
   - **First Scan:** The member scans the QR code (`/g/{gymSlug}/in`), enters their **10-digit** Indian mobile number (`PhoneUtils.java`) and **4-digit PIN**. GymKhata binds their phone browser with an `HttpOnly` cookie (`gk_device_token`, valid for **365 days**, up to **2 bound devices** per member, `CheckinService.MAX_BOUND_DEVICES = 2`).
   - **Later Scans:** Checking in takes **1 tap**.
   - **Status Screen (Never Blocks Entry):**
-    - **Green Badge:** Active membership with more than **7 days** remaining (`CheckinService.java:700`).
-    - **Amber Badge:** Active membership expiring within **7 days** (`daysLeft <= 7`, `CheckinService.java:700`).
-    - **Red Badge:** Expired or unpaid membership (`CheckinService.java:708`) with a 1-tap UPI payment link (`/pay/{payToken}` or `upi://pay`) and your gym's contact number.
+    - **Green Badge:** Active membership with more than **7 days** remaining (`CheckinService.java`).
+    - **Amber Badge:** Active membership expiring within **7 days** (`daysLeft <= 7`, `CheckinService.java`).
+    - **Red Badge:** Expired or unpaid membership (`CheckinService.java`) with a 1-tap UPI payment link (`/pay/{payToken}` or `upi://pay`) and your gym's contact number.
 - **Strict Mode (Optional):** Enable *Strict Mode: Rotating 60s QR Token*. Open `/g/{gymSlug}/screen` on a tablet or screen at the gym. The HMAC-SHA256 QR token rotates every **60 seconds** (`GeofenceAndQrUtils.ROTATION_WINDOW_SECONDS = 60`, accepting current + previous window).
 - **Soft Geofence:** Optionally configure your gym's latitude, longitude, and radius (default **100 meters**, `Gym.java:114`). Off-premise check-ins are logged with `withinGeofence = false` for your review without blocking the member.
 - **Auto-Close:** Open sessions automatically close after **120 minutes (2 hours)** (`autoCloseDurationMinutes = 120`, `Gym.java:116`) or at your configured closing time (`closingTimeIst`, default `22:00`, `Gym.java:115`).
@@ -39,7 +39,9 @@ GymKhata provides a complete Personal Training lifecycle under `/app/pt`:
 - **Trainers as Managed Records:** Trainers do not have logins (preserving the **1-owner-per-gym** security rule). Add their name, phone, and commission rule (`PERCENT_OF_TAXABLE`, `FIXED_PER_PACKAGE`, `FIXED_PER_SESSION`, or `SLAB`).
 - **PT Packages:** Define session-based (e.g., 10 sessions, 60 days validity) or time-based (e.g., 30 days) packages.
   - Price is all-inclusive in integer paise with GST back-calculated (`GstCalculator.fromInclusive`).
-  - Default membership SAC is `999723` (`application.yml:69`) and default PT SAC is `999799` at **5% GST** (`BillingService.PT_GST_RATE_PERCENT = 5`). *Confirm GST classification with your Chartered Accountant (CA).*
+  - GST rate, SAC code, effective date, and ITC status (`No ITC` / `With ITC`) are configurable per gym and per item type (`MEMBERSHIP`, `PT`, `ADMISSION_FEE`) in **Settings → GST Rate, SAC & Effective Date per Item Type** (`Gym.Settings.gstRules` + `application.yml:69-105`).
+  - Default for `MEMBERSHIP`, `PT`, and `ADMISSION_FEE` is SAC `999723` at **5% GST (No ITC)** effective `2025-09-22` (**18% With ITC** prior to `2025-09-22`). *Confirm GST rate, SAC code, and ITC eligibility with your Chartered Accountant (CA).*
+  - Every invoice and PDF prints the item's **SAC code**, **GST rate**, and **ITC status** (`[No ITC]` / `[With ITC]`).
 - **Proportional Payment Accruals (Cash-Flow Safe):**
   - If a member pays **60%** of the invoice today, the trainer accrues **60%** of their total package commission today (`CommissionCalculator.computeProportionalPaymentAccrual`).
   - When the remaining **40%** is paid, the remaining **40%** commission accrues.
@@ -60,7 +62,7 @@ GymKhata इस सोच पर बना है कि हर जिम मे
 जब आप `/app/members` में नया मेंबर जोड़ते हैं:
 1. सिस्टम अपने आप उस मेंबर के लिए **4 अंकों का रैंडम पिन** बना देता है।
 2. यह पिन आपको स्क्रीन पर दिखता है और साथ ही एक-क्लिक व्हाट्सएप वेलकम मैसेज भी तैयार मिलता है।
-3. अगर मेंबर पिन भूल जाए या **5 गलत प्रयासों** के बाद लॉक हो जाए, तो उसके प्रोफाइल पर **Reset PIN** बटन दबाएं। तुरंत नया पिन जारी हो जाएगा और लॉक खुल जाएगा।
+3. अगर मेंबर पिन भूल जाए, **5 गलत प्रयासों** के बाद लॉक हो जाए, या नए फोन पर **20 गलत प्रयासों (24 घंटे में)** के बाद ओनर अप्रूवल मांगे, तो उसके प्रोफाइल पर डिवाइस अप्रूव करें या **Reset PIN** बटन दबाएं। पहले से रजिस्टर (Bound) फोन बिना रुकावट चेक-इन कर सकते हैं।
 
 ## 3. क्यूआर कोड से सेल्फ चेक-इन
 **Settings → Self-Service QR Entry & Visits** में जाकर इसे चालू करें:
@@ -87,11 +89,12 @@ GymKhata इस सोच पर बना है कि हर जिम मे
 | `attendanceEnabled = false` by default | `backend/src/main/java/com/gymkhata/admin/model/Gym.java:108` |
 | Random **4-digit PIN** (`%04d`) | `backend/src/main/java/com/gymkhata/member/MemberService.java:152` |
 | **10-digit** Indian mobile normalization (`+91`) | `backend/src/main/java/com/gymkhata/domain/PhoneUtils.java` |
-| Max **5 failed PIN attempts** + exponential backoff (**60s, 300s, 900s, 3600s**) | `backend/src/main/java/com/gymkhata/checkin/CheckinService.java:57,428` |
-| Max **2 bound devices** per member, **365-day** cookie TTL | `CheckinService.java:59`, `PublicAttendanceController.java:78` |
-| Amber badge threshold **<= 7 days** | `backend/src/main/java/com/gymkhata/checkin/CheckinService.java:700` |
+| Max **5 failed PIN attempts** per IP + exponential backoff (**60s, 300s, 900s, 3600s**) | `backend/src/main/java/com/gymkhata/checkin/CheckinService.java:58,524` |
+| Per-phone unbound PIN budget **20 failures / 24h** across all IPs | `backend/src/main/java/com/gymkhata/checkin/CheckinService.java:60-61` |
+| Max **2 bound devices** per member, **365-day** cookie TTL | `CheckinService.java:62`, `PublicAttendanceController.java:78` |
+| Amber badge threshold **<= 7 days** | `backend/src/main/java/com/gymkhata/checkin/CheckinService.java` |
 | Rotating QR window **60 seconds** | `backend/src/main/java/com/gymkhata/domain/GeofenceAndQrUtils.java:16` |
 | Default geofence radius **100 meters** | `backend/src/main/java/com/gymkhata/admin/model/Gym.java:114` |
 | Auto-close open sessions after **120 minutes (2 hours)** or `22:00` IST | `backend/src/main/java/com/gymkhata/admin/model/Gym.java:115-116` |
-| Membership SAC `999723` (18% / 5% from `2025-09-22`) & PT SAC `999799` (**5%**) | `backend/src/main/resources/application.yml:69-75`, `BillingService.java:31-32` |
+| Configurable GST (`MEMBERSHIP`, `PT`, `ADMISSION_FEE`): default SAC `999723`, **18% With ITC** prior to `2025-09-22`, **5% No ITC** from `2025-09-22` (confirm with CA) | `backend/src/main/resources/application.yml:69-105`, `GstConfig.java` |
 | **60% / 40%** proportional commission accrual | `CommissionCalculatorTest.java`, `frontend/e2e/prod-flows.spec.ts` |

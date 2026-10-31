@@ -68,6 +68,11 @@ public class TenantService {
                     ? prevSecret
                     : UUID.randomUUID().toString().replace("-", ""));
         }
+        if (incoming.getGstRules() == null || incoming.getGstRules().isEmpty()) {
+            if (existing.getGstRules() != null && !existing.getGstRules().isEmpty()) {
+                incoming.setGstRules(existing.getGstRules());
+            }
+        }
         if (gym.getSlug() == null || gym.getSlug().isBlank()) {
             gym.setSlug(gym.getCode());
         }

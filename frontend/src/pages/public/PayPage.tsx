@@ -14,6 +14,15 @@ type PayInfo = {
   upiVpa: string
   upiDeepLink: string
   status: string
+  gstRegistered?: boolean
+  gstin?: string
+  lines?: {
+    description: string
+    sac?: string
+    gstRate: number
+    itcStatus?: string
+    totalPaise: number
+  }[]
 }
 
 export function PayPage() {
@@ -72,6 +81,25 @@ export function PayPage() {
 
         <p className="text-sm text-slate-500 mt-4">{t('pay.amountDue')}</p>
         <p className="text-3xl font-bold text-slate-900">{formatMoney(data.amountPaise)}</p>
+
+        {data.lines && data.lines.length > 0 ? (
+          <div className="mt-4 pt-3 border-t border-slate-100 text-left space-y-1">
+            {data.gstRegistered && data.gstin ? (
+              <p className="text-[11px] text-slate-500 font-mono">GSTIN: {data.gstin}</p>
+            ) : null}
+            {data.lines.map((l, idx) => (
+              <div key={idx} className="text-xs text-slate-600 flex justify-between gap-2" data-testid="pay-invoice-line">
+                <span>
+                  {l.description}
+                  {data.gstRegistered
+                    ? ` · SAC ${l.sac ?? '999723'} @ ${l.gstRate}% [${l.itcStatus || 'No ITC'}]`
+                    : ''}
+                </span>
+                <span className="shrink-0 font-medium">{formatMoney(l.totalPaise)}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {data.upiDeepLink ? (
           <div className="mt-5">

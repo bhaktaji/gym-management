@@ -57,6 +57,8 @@ public class CheckinService {
     public static final int MAX_PIN_ATTEMPTS = 5;
     public static final long PIN_LOCKOUT_SECONDS = 15 * 60L;
     public static final int MAX_BOUND_DEVICES = 2;
+    public static final int MAX_UNBOUND_PHONE_FAILURES_24H = 20;
+    public static final Duration UNBOUND_PHONE_BUDGET_WINDOW = Duration.ofHours(24);
 
     private final CheckinRepository checkinRepository;
     private final MemberRepository memberRepository;
@@ -369,6 +371,7 @@ public class CheckinService {
         Gym gym = resolveGymBySlugWithAttendanceEnabled(gymSlug);
         autoCloseStaleSessions(gym);
         Member boundMember = resolveMemberFromDeviceToken(gym.getId(), deviceToken);
+        Member pendingMember = boundMember == null ? resolvePendingMemberFromDeviceToken(gym.getId(), deviceToken) : null;
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("gymId", gym.getId());
@@ -379,9 +382,13 @@ public class CheckinService {
         out.put("strictQrMode", gym.getSettings().isStrictQrMode());
         out.put("selfCheckoutEnabled", gym.getSettings().isSelfCheckoutEnabled());
         out.put("deviceBound", boundMember != null);
+        out.put("devicePendingApproval", pendingMember != null);
         if (boundMember != null) {
             out.put("boundMemberId", boundMember.getId());
             out.put("boundMemberName", boundMember.getName());
+        } else if (pendingMember != null) {
+            out.put("pendingMemberId", pendingMember.getId());
+            out.put("pendingMemberName", pendingMember.getName());
         }
         return out;
     }
@@ -500,12 +507,22 @@ public class CheckinService {
             }
         }
 
-        // 2. Identify member (via bound device token OR phone + 4-digit PIN)
+        // 2. Identify member (via bound device token OR phone + 4-digit PIN).
+        // Bound devices bypass unbound PIN lockouts/budgets completely.
         Member member = resolveMemberFromDeviceToken(gymId, deviceToken);
         String issuedCookieToken = null;
 
         if (member == null) {
             Instant now = clock.now();
+
+            // Check if the caller has a pending (not yet approved) device token and didn't supply phone+PIN
+            if ((phone == null || phone.isBlank() || pin == null || pin.isBlank()) && deviceToken != null && !deviceToken.isBlank()) {
+                Member pending = resolvePendingMemberFromDeviceToken(gymId, deviceToken);
+                if (pending != null) {
+                    throw BusinessException.forbidden("DEVICE_PENDING_APPROVAL",
+                            "This device is awaiting gym owner approval before check-in is allowed.");
+                }
+            }
 
             if (phone == null || phone.isBlank() || pin == null || pin.isBlank()) {
                 throw BusinessException.unauthorized("AUTH_REQUIRED",
@@ -520,16 +537,63 @@ public class CheckinService {
             member = memberRepository.findByGymIdAndPhone(gymId, e164)
                     .orElseThrow(() -> BusinessException.notFound("MEMBER_NOT_FOUND", "Member not found"));
 
-            if (member.getPinHash() == null || !passwordEncoder.matches(pin.trim(), member.getPinHash())) {
+            // Prune unbound failures older than 24h rolling window
+            Instant cutoff24h = now.minus(UNBOUND_PHONE_BUDGET_WINDOW);
+            List<Instant> recentFailures = new ArrayList<>(member.getUnboundPinFailureTimestamps().stream()
+                    .filter(ts -> ts != null && ts.isAfter(cutoff24h))
+                    .toList());
+            member.setUnboundPinFailureTimestamps(recentFailures);
+            boolean phoneBudgetExhausted = member.isUnboundPinBudgetExhausted()
+                    || recentFailures.size() >= MAX_UNBOUND_PHONE_FAILURES_24H;
+
+            boolean pinMatches = member.getPinHash() != null && passwordEncoder.matches(pin.trim(), member.getPinHash());
+
+            if (!pinMatches) {
+                if (phoneBudgetExhausted) {
+                    throw BusinessException.tooManyRequests("PIN_PHONE_BUDGET_EXHAUSTED",
+                            "Per-phone unbound PIN failure budget (20/24h) exhausted across IPs. New device binding requires gym owner approval.");
+                }
+
                 AttemptTracker tracker = recordFailure(e164, clientIp, now);
                 int attempts = member.getPinFailedAttempts() + 1;
                 member.setPinFailedAttempts(attempts);
+                recentFailures.add(now);
+                member.setUnboundPinFailureTimestamps(recentFailures);
+
+                if (recentFailures.size() >= MAX_UNBOUND_PHONE_FAILURES_24H) {
+                    member.setUnboundPinBudgetExhausted(true);
+                    memberRepository.save(member);
+
+                    OutboxMessage budgetAlert = new OutboxMessage();
+                    budgetAlert.setGymId(gymId);
+                    budgetAlert.setMemberId(member.getId());
+                    budgetAlert.setMemberName(member.getName());
+                    budgetAlert.setPhone(gym.getPhone());
+                    budgetAlert.setType(OutboxMessage.TYPE_ALERT);
+                    budgetAlert.setChannel(OutboxMessage.CHANNEL_WHATSAPP);
+                    budgetAlert.setLanguage("EN");
+                    budgetAlert.setStatus(OutboxMessage.STATUS_PENDING);
+                    budgetAlert.setVariables(Map.of(
+                            "alert", "Security Alert: Per-phone unbound PIN failure budget (" + MAX_UNBOUND_PHONE_FAILURES_24H
+                                    + " failures in 24h across IPs) exhausted for member " + member.getName()
+                                    + " (" + member.getPhone() + "). New device binding now requires owner approval."
+                    ));
+                    budgetAlert.setDate(clock.today());
+                    budgetAlert.setCreatedAt(now);
+                    outboxRepository.save(budgetAlert);
+
+                    auditService.log(gymId, member.getId(), "SYSTEM", "PIN_PHONE_BUDGET_EXHAUSTED",
+                            "member", member.getId(), "unboundFailures24h=" + recentFailures.size());
+
+                    throw BusinessException.tooManyRequests("PIN_PHONE_BUDGET_EXHAUSTED",
+                            "Per-phone unbound PIN failure budget (20/24h) exhausted across IPs. New device binding requires gym owner approval.");
+                }
+
                 if (tracker.lockedUntil != null && tracker.lockedUntil.isAfter(now)) {
                     member.setPinLockedUntil(tracker.lockedUntil);
                     memberRepository.save(member);
 
                     long lockSecs = Duration.between(now, tracker.lockedUntil).toSeconds();
-                    // Alert the gym owner via outbox notification
                     OutboxMessage alert = new OutboxMessage();
                     alert.setGymId(gymId);
                     alert.setMemberId(member.getId());
@@ -551,7 +615,62 @@ public class CheckinService {
                 throw BusinessException.unauthorized("INVALID_PIN", "Invalid 4-digit PIN");
             }
 
-            // Valid PIN: reset lockout counters for this phone+IP & bind device (max 2 bound devices per member)
+            // PIN matched on an unbound device!
+            // If per-phone unbound budget is exhausted, DO NOT auto-bind: create a PendingDeviceRequest for owner approval.
+            if (phoneBudgetExhausted) {
+                if (member.getBoundDevices().size() >= MAX_BOUND_DEVICES) {
+                    throw BusinessException.forbidden("MAX_DEVICES_REACHED",
+                            "Maximum 2 devices bound to this member. Ask the gym owner to revoke an old device.");
+                }
+                String requestId = UUID.randomUUID().toString().substring(0, 12);
+                String rawSecret = UUID.randomUUID().toString().replace("-", "");
+                issuedCookieToken = member.getId() + ":" + rawSecret;
+                String tokenHash = sha256Hex(rawSecret);
+
+                member.getPendingDeviceRequests().add(new Member.PendingDeviceRequest(
+                        requestId,
+                        tokenHash,
+                        userAgent == null ? "Browser" : userAgent,
+                        clientIp == null ? "unknown" : clientIp,
+                        now
+                ));
+                member.setUpdatedAt(now);
+                member = memberRepository.save(member);
+
+                OutboxMessage pendingAlert = new OutboxMessage();
+                pendingAlert.setGymId(gymId);
+                pendingAlert.setMemberId(member.getId());
+                pendingAlert.setMemberName(member.getName());
+                pendingAlert.setPhone(gym.getPhone());
+                pendingAlert.setType(OutboxMessage.TYPE_ALERT);
+                pendingAlert.setChannel(OutboxMessage.CHANNEL_WHATSAPP);
+                pendingAlert.setLanguage("EN");
+                pendingAlert.setStatus(OutboxMessage.STATUS_PENDING);
+                pendingAlert.setVariables(Map.of(
+                        "alert", "Pending Device Binding Request for member " + member.getName()
+                                + " (" + member.getPhone() + ") after PIN budget exhaustion. Approve on the Member page."
+                ));
+                pendingAlert.setDate(clock.today());
+                pendingAlert.setCreatedAt(now);
+                outboxRepository.save(pendingAlert);
+
+                auditService.log(gymId, member.getId(), "MEMBER_SELF", "DEVICE_BINDING_PENDING_APPROVAL",
+                        "member", member.getId(), "requestId=" + requestId);
+
+                Map<String, Object> pendingPayload = new LinkedHashMap<>();
+                pendingPayload.put("status", "PENDING_OWNER_APPROVAL");
+                pendingPayload.put("pendingApproval", true);
+                pendingPayload.put("pendingRequestId", requestId);
+                pendingPayload.put("deviceBound", false);
+                pendingPayload.put("memberId", member.getId());
+                pendingPayload.put("memberName", member.getName());
+                pendingPayload.put("gymName", gym.getName());
+                pendingPayload.put("deviceToken", issuedCookieToken);
+                pendingPayload.put("message", "Security protection active: new device binding requires gym owner approval.");
+                return new SelfCheckinOutcome(pendingPayload, issuedCookieToken);
+            }
+
+            // Normal valid PIN: reset lockout counters for this phone+IP & bind device (max 2 bound devices per member)
             phoneIpLockouts.remove(lockoutKey(e164, clientIp));
             member.setPinFailedAttempts(0);
             member.setPinLockedUntil(null);
@@ -613,6 +732,7 @@ public class CheckinService {
         c.setMembershipBadge(badge);
         Checkin saved = checkinRepository.save(c);
 
+        statusPayload.put("status", "CHECKED_IN");
         statusPayload.put("badgeColor", badge);
         statusPayload.put("checkinId", saved.getId());
         statusPayload.put("checkInAt", saved.getCheckInAt());
@@ -747,6 +867,28 @@ public class CheckinService {
         }
         String expectedHash = sha256Hex(rawSecret);
         boolean matched = member.getBoundDevices().stream()
+                .anyMatch(d -> expectedHash.equals(d.getTokenHash()));
+        return matched ? member : null;
+    }
+
+    public Member resolvePendingMemberFromDeviceToken(String gymId, String deviceToken) {
+        if (deviceToken == null || !deviceToken.contains(":")) {
+            return null;
+        }
+        String[] parts = deviceToken.split(":", 2);
+        String memberId = parts[0];
+        String rawSecret = parts[1];
+        if (memberId.isBlank() || rawSecret.isBlank()) {
+            return null;
+        }
+        Member member = memberRepository.findById(memberId)
+                .filter(m -> gymId.equals(m.getGymId()))
+                .orElse(null);
+        if (member == null || member.getPendingDeviceRequests() == null) {
+            return null;
+        }
+        String expectedHash = sha256Hex(rawSecret);
+        boolean matched = member.getPendingDeviceRequests().stream()
                 .anyMatch(d -> expectedHash.equals(d.getTokenHash()));
         return matched ? member : null;
     }

@@ -255,16 +255,27 @@ public class Invoice {
      * recomputed later. Lines always sum exactly to the invoice total.
      */
     public static class Line {
+        private String itemType;
         private String description;
         private String sac;
         private int quantity;
         private long ratePaise;
         private long taxablePaise;
         private int gstRate;
+        private String itcStatus;
+        private String gstEffectiveFrom;
         private long cgstPaise;
         private long sgstPaise;
         private long igstPaise;
         private long totalPaise;
+
+        public String getItemType() {
+            return itemType;
+        }
+
+        public void setItemType(String itemType) {
+            this.itemType = itemType;
+        }
 
         public String getDescription() {
             return description;
@@ -312,6 +323,22 @@ public class Invoice {
 
         public void setGstRate(int gstRate) {
             this.gstRate = gstRate;
+        }
+
+        public String getItcStatus() {
+            return itcStatus;
+        }
+
+        public void setItcStatus(String itcStatus) {
+            this.itcStatus = itcStatus;
+        }
+
+        public String getGstEffectiveFrom() {
+            return gstEffectiveFrom;
+        }
+
+        public void setGstEffectiveFrom(String gstEffectiveFrom) {
+            this.gstEffectiveFrom = gstEffectiveFrom;
         }
 
         public long getCgstPaise() {
