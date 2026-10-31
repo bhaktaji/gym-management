@@ -82,6 +82,7 @@ class SecurityAndDomainEdgeCasesTest {
     @Autowired private PtController ptController;
     @Autowired private CommissionService commissionService;
     @Autowired private OutboxRepository outboxRepository;
+    @Autowired private com.gymkhata.member.repo.MemberRepository memberRepository;
 
     @AfterEach
     void tearDown() {
@@ -262,6 +263,24 @@ class SecurityAndDomainEdgeCasesTest {
         List<OutboxMessage> alerts = outboxRepository.findByGymIdOrderByCreatedAtDesc(gymId);
         assertThat(alerts).anyMatch(m -> m.getVariables() != null
                 && String.valueOf(m.getVariables().get("alert")).contains("unbound PIN failure budget"));
+
+        // Verify rolling 24-hour window reset:
+        // When failures age beyond 24 hours, the budget automatically resets without owner intervention
+        Member targetInDb = memberRepository.findById(target.getId()).orElseThrow();
+        List<java.time.Instant> agedFailures = targetInDb.getUnboundPinFailureTimestamps().stream()
+                .map(ts -> ts.minus(java.time.Duration.ofHours(25)))
+                .toList();
+        targetInDb.setUnboundPinFailureTimestamps(agedFailures);
+        memberRepository.save(targetInDb);
+
+        // Attempt from a new IP now resets the budget and returns standard INVALID_PIN rather than budget exhaustion
+        BusinessException resetEx = assertThrows(BusinessException.class, () ->
+                publicAttendanceController.checkIn(slug,
+                        new PublicAttendanceController.SelfCheckinRequest(target.getPhone(), "7777", null, null, null, null),
+                        null, "Bot-After24h", requestFromIp("198.51.100.99", null), new MockHttpServletResponse()));
+        assertEquals("INVALID_PIN", resetEx.getCode());
+        Member afterRollingReset = memberRepository.findById(target.getId()).orElseThrow();
+        assertFalse(afterRollingReset.isUnboundPinBudgetExhausted(), "Budget flag must auto-reset when failures are >24h old");
     }
 
     @Test

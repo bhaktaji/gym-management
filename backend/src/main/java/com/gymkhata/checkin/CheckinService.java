@@ -543,8 +543,10 @@ public class CheckinService {
                     .filter(ts -> ts != null && ts.isAfter(cutoff24h))
                     .toList());
             member.setUnboundPinFailureTimestamps(recentFailures);
-            boolean phoneBudgetExhausted = member.isUnboundPinBudgetExhausted()
-                    || recentFailures.size() >= MAX_UNBOUND_PHONE_FAILURES_24H;
+            if (recentFailures.size() < MAX_UNBOUND_PHONE_FAILURES_24H && member.isUnboundPinBudgetExhausted()) {
+                member.setUnboundPinBudgetExhausted(false);
+            }
+            boolean phoneBudgetExhausted = recentFailures.size() >= MAX_UNBOUND_PHONE_FAILURES_24H;
 
             boolean pinMatches = member.getPinHash() != null && passwordEncoder.matches(pin.trim(), member.getPinHash());
 
