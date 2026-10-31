@@ -34,7 +34,10 @@ public class TenantStatusInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        User user = SecurityUtils.currentUser();
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || !(auth.getPrincipal() instanceof User user)) {
+            return true;
+        }
         if (!User.ROLE_GYM_OWNER.equals(user.getRole())) {
             return true;
         }

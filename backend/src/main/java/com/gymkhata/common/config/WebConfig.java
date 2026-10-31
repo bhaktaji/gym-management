@@ -21,6 +21,6 @@ public class WebConfig implements WebMvcConfigurer {
         // Suspended gym owners cannot use tenant APIs: 403 ACCOUNT_SUSPENDED
         registry.addInterceptor(tenantStatusInterceptor)
                 .addPathPatterns("/api/v1/**")
-                .excludePathPatterns("/api/v1/auth/**", "/api/v1/config/**", "/api/v1/pay/**", "/api/v1/public/**", "/api/v1/admin/**");
+                .excludePathPatterns("/api/v1/auth/**", "/api/v1/config/**", "/api/v1/build-info", "/api/v1/pay/**", "/api/v1/public/**", "/api/v1/admin/**");
     }
 }

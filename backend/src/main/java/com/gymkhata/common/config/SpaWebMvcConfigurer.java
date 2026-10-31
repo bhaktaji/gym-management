@@ -25,7 +25,7 @@ public class SpaWebMvcConfigurer implements WebMvcConfigurer {
                 .addResolver(new PathResourceResolver() {
                     @Override
                     protected Resource getResource(String resourcePath, Resource location) throws IOException {
-                        Resource requested = location.createRelative(resourcePath);
+                        Resource requested = new ClassPathResource("/static/" + resourcePath);
                         if (requested.exists() && requested.isReadable()) {
                             return requested;
                         }
