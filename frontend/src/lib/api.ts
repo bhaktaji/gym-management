@@ -38,6 +38,22 @@ export function setUnauthorizedHandler(fn: () => void) {
 function handleMockApi<T>(method: string, path: string, body: any): T {
   console.info(`[GymKhata Mock API] ${method} ${path}`, body)
 
+  if (path === '/api/v1/config/public') {
+    return {
+      appName: 'GymKhata',
+      pricing: {
+        monthlyPricePaise: 99900,
+        currency: 'INR',
+        included: 'Unlimited members, Memberships billing & GST invoices, UPI payments with QR, Check-ins, WhatsApp reminders, Leads reports & CSV import',
+        notCharged: 'No per-member fees, No per-message fees',
+      },
+      gst: {
+        sac: '999723',
+        rates: [{ rate: 18, effectiveFrom: '2000-01-01', itcStatus: 'With ITC' }],
+      },
+    } as unknown as T
+  }
+
   if (path === '/api/v1/auth/login' || path === '/api/v1/auth/refresh') {
     const phone = body?.phone || '+919810010001'
     let role = 'GYM_OWNER'
@@ -144,7 +160,6 @@ function handleMockApi<T>(method: string, path: string, body: any): T {
     ] as unknown as T
   }
 
-  // Generic success fallback for any other endpoint
   return { success: true } as unknown as T
 }
 
@@ -192,7 +207,6 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
     if (res.status === 204) return undefined as T
     return (await res.json()) as T
   } catch (err) {
-    // If backend is not running or network error occurs, fall back gracefully to mock API handler
     console.warn(`[GymKhata API] Network call failed for ${method} ${path}. Falling back to client-side mock mode.`, err)
     return handleMockApi<T>(method, path, body)
   }

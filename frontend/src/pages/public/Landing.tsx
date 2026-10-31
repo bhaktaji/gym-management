@@ -34,7 +34,7 @@ const FEATURES = [
 export function Landing() {
   const { t } = useTranslation()
   const { data } = usePublicConfig()
-  const price = data?.pricing.monthlyPricePaise ?? 99900
+  const price = data?.pricing?.monthlyPricePaise ?? 99900
 
   return (
     <div>
