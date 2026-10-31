@@ -5,6 +5,13 @@
 ### **The Ultimate Multi-Tenant Gym Management Platform for Independent Gyms in India**
 *Bilingual · GST-Ready · UPI-Integrated · WhatsApp-Enabled · Zero Per-Member Fees*
 
+<p align="center">
+  <a href="#-why-gym-owners-choose-gymkhata"><b>Explore Features</b></a> &nbsp;&bull;&nbsp;
+  <a href="#-live-demo--test-logins"><b>Live Demo</b></a> &nbsp;&bull;&nbsp;
+  <a href="#-for-investors--stakeholders"><b>Investor Briefing</b></a> &nbsp;&bull;&nbsp;
+  <a href="#-quick-start--installation"><b>Quick Start</b></a>
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://adoptium.net/)
 [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5.16-green.svg)](https://spring.io/projects/spring-boot)
@@ -15,17 +22,17 @@
 
 ---
 
-## 📸 Live Application Preview
+## 📸 Platform Interface Preview
 
-<p align="center">
-  <img src="frontend/screenshots/dashboard-attendance-on.png" alt="GymKhata Dashboard" width="100%" style="border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);" />
-</p>
+<div align="center">
+  <img src="frontend/screenshots/dashboard-attendance-on.png" alt="GymKhata Owner Dashboard" width="100%" style="border-radius: 12px; border: 1px solid #d1d5db; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);" />
+</div>
 
 ---
 
 ## 🌟 Executive Summary
 
-**GymKhata** is an enterprise-grade, mobile-first gym management platform engineered specifically for independent gym owners across tier-2 and tier-3 India. Traditional gym software penalizes growth by charging per-member or per-message fees. GymKhata breaks this mould with **one predictable flat monthly fee**, zero commission clipping, full GST compliance, bilingual support (English & Hindi), and instant WhatsApp renewal reminders.
+**GymKhata** is an enterprise-grade, mobile-first gym management platform engineered specifically for independent gym owners across tier-2 and tier-3 India. Traditional gym software penalizes growth by charging per-member or per-message commissions. GymKhata breaks this mould with **one predictable flat monthly fee**, zero transaction clipping, full Indian GST compliance, bilingual support (English & Hindi), and automated WhatsApp renewal reminders.
 
 ---
 
@@ -47,7 +54,7 @@
 
 ---
 
-## 🔄 2. Core Workflow & Architecture
+## 🔄 2. Core Workflow & System Architecture
 
 ### The Member Lifecycle Loop
 ```mermaid
