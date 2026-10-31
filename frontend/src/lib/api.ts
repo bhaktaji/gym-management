@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'gymkhata.tokens'
+const GYMS_KEY = 'gymkhata.mock.gyms'
 
 export type Tokens = { accessToken: string; refreshToken: string }
 
@@ -34,6 +35,24 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
 
+function getStoredGyms() {
+  const raw = localStorage.getItem(GYMS_KEY)
+  if (raw) {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      // fallback
+    }
+  }
+  const defaultGyms = [
+    { id: 'BAJRANG-LKO', name: 'Bajrang Powerhouse & Fitness', code: 'BAJRANG-LKO', ownerName: 'Rajesh Pratap Singh', ownerPhone: '+919810010001', city: 'Lucknow', state: 'Uttar Pradesh', gstRegistered: true, activeMembers: 4, status: 'ACTIVE' },
+    { id: 'IRONCORE-IND', name: 'IronCore Strength Club', code: 'IRONCORE-IND', ownerName: 'Vikram Malhotra', ownerPhone: '+919810010002', city: 'Indore', state: 'Madhya Pradesh', gstRegistered: true, activeMembers: 12, status: 'ACTIVE' },
+    { id: 'TITAN-NGP', name: 'Titan Muscle Factory', code: 'TITAN-NGP', ownerName: 'Amit Shah', ownerPhone: '+919810010004', city: 'Nagpur', state: 'Maharashtra', gstRegistered: false, activeMembers: 32, status: 'SUSPENDED' },
+  ]
+  localStorage.setItem(GYMS_KEY, JSON.stringify(defaultGyms))
+  return defaultGyms
+}
+
 // Client-side mock handler for standalone preview mode when backend is not running
 function handleMockApi<T>(method: string, path: string, body: any): T {
   console.info(`[GymKhata Mock API] ${method} ${path}`, body)
@@ -54,13 +73,33 @@ function handleMockApi<T>(method: string, path: string, body: any): T {
     } as unknown as T
   }
 
+  if (path === '/api/v1/auth/signup') {
+    const gyms = getStoredGyms()
+    const newGymId = (body?.gymName || 'ABC Gym').toUpperCase().replace(/[^A-Z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900)
+    const newGym = {
+      id: newGymId,
+      name: body?.gymName || 'ABC Gym',
+      code: newGymId,
+      ownerName: body?.ownerName || 'Owner',
+      ownerPhone: body?.phone || '9876543210',
+      city: body?.city || 'City',
+      state: body?.state || 'State',
+      gstRegistered: false,
+      activeMembers: 0,
+      status: 'PENDING',
+    }
+    gyms.push(newGym)
+    localStorage.setItem(GYMS_KEY, JSON.stringify(gyms))
+    return { success: true, gymId: newGymId, status: 'PENDING' } as unknown as T
+  }
+
   if (path === '/api/v1/auth/login' || path === '/api/v1/auth/refresh') {
-    const phone = body?.phone || '+919810010001'
+    const phone = body?.phone || '9915110640'
     let role = 'GYM_OWNER'
     let name = 'Rajesh Pratap Singh'
     let gymId = 'BAJRANG-LKO'
 
-    if (phone.includes('9000000001') || phone === '9000000001') {
+    if (phone.includes('9915110640') || phone === '9915110640' || phone.includes('9000000001')) {
       role = 'SUPER_ADMIN'
       name = 'Platform Super Admin'
       gymId = 'PLATFORM'
@@ -76,6 +115,42 @@ function handleMockApi<T>(method: string, path: string, body: any): T {
     const tokens = { accessToken: 'mock-access-token-123', refreshToken: 'mock-refresh-token-456' }
     setTokens(tokens)
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user } as unknown as T
+  }
+
+  if (path === '/api/v1/admin/gyms') {
+    if (method === 'POST') {
+      const gyms = getStoredGyms()
+      const newGymId = (body?.gymName || 'New Gym').toUpperCase().replace(/[^A-Z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900)
+      const newGym = {
+        id: newGymId,
+        name: body?.gymName || 'New Gym',
+        code: newGymId,
+        ownerName: body?.ownerName || 'Owner',
+        ownerPhone: body?.phone || '9876543210',
+        city: body?.city || '',
+        state: body?.state || '',
+        gstRegistered: body?.gstRegistered || false,
+        activeMembers: 0,
+        status: 'ACTIVE',
+      }
+      gyms.push(newGym)
+      localStorage.setItem(GYMS_KEY, JSON.stringify(gyms))
+      return newGym as unknown as T
+    }
+    return getStoredGyms() as unknown as T
+  }
+
+  if (path.match(/\/api\/v1\/admin\/gyms\/[^/]+\/status/)) {
+    const parts = path.split('/')
+    const gymId = parts[parts.length - 2]
+    const newStatus = body?.status || 'ACTIVE'
+    const gyms = getStoredGyms()
+    const gym = gyms.find((g: any) => g.id === gymId)
+    if (gym) {
+      gym.status = newStatus
+      localStorage.setItem(GYMS_KEY, JSON.stringify(gyms))
+    }
+    return { success: true, status: newStatus } as unknown as T
   }
 
   if (path === '/api/v1/tenant/profile' || path === '/api/v1/owner/profile') {
@@ -150,14 +225,6 @@ function handleMockApi<T>(method: string, path: string, body: any): T {
       activeMembersCount: 4,
       expiringCount: 1,
     } as unknown as T
-  }
-
-  if (path.includes('/admin/gyms')) {
-    return [
-      { id: 'BAJRANG-LKO', name: 'Bajrang Powerhouse & Fitness', ownerName: 'Rajesh Pratap Singh', phone: '+919810010001', status: 'ACTIVE' },
-      { id: 'IRONCORE-IND', name: 'IronCore Strength Club', ownerName: 'Vikram Malhotra', phone: '+919810010002', status: 'ACTIVE' },
-      { id: 'TITAN-NGP', name: 'Titan Muscle Factory', ownerName: 'Amit Shah', phone: '+919810010004', status: 'SUSPENDED' },
-    ] as unknown as T
   }
 
   return { success: true } as unknown as T
