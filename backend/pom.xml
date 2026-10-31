@@ -111,6 +111,27 @@
                     <argLine>-javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${byte-buddy.version}/byte-buddy-agent-${byte-buddy.version}.jar -XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.4</version>
+                <executions>
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>sh</executable>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument>mkdir -p target/classes &amp;&amp; printf "commitHash=%s\nbuildTime=%s\n" "$(git rev-parse --short HEAD 2&gt;/dev/null || echo dev)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" &gt; target/classes/build-info.properties</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

@@ -11,11 +11,14 @@ RUN npm run build
 
 # Stage 2: Build Spring Boot JAR with embedded frontend static assets
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS backend-builder
+ARG COMMIT_HASH=release
+ARG BUILD_TIME=unknown
 WORKDIR /workspace/backend
 COPY backend/pom.xml .
 RUN mvn dependency:go-offline -B
 COPY backend/src ./src
 COPY --from=frontend-builder /workspace/frontend/dist ./src/main/resources/static
+RUN mkdir -p target/classes && printf "commitHash=%s\nbuildTime=%s\n" "${COMMIT_HASH}" "${BUILD_TIME}" > target/classes/build-info.properties
 RUN mvn clean package -DskipTests -B
 
 # Stage 3: Minimal, hardened production runtime

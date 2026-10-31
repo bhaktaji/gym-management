@@ -22,6 +22,8 @@ bin/
 *.zip
 *.tar.gz
 *.tsbuildinfo
+*.bundle
+build-info.properties
 
 # --- Dependencies -----------------------------------------------------------
 frontend/node_modules/
