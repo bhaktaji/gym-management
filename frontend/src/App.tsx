@@ -98,9 +98,7 @@ export default function App() {
           path="/admin"
           element={
             <Protected role="SUPER_ADMIN">
-              <AppShell>
-                <AdminGyms />
-              </AppShell>
+              <AdminGyms />
             </Protected>
           }
         />

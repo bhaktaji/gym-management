@@ -180,6 +180,15 @@ export function AdminGyms() {
               </dl>
 
               <div className="flex flex-wrap gap-2 mt-3">
+                {g.status === 'PENDING' && (
+                  <button
+                    type="button"
+                    className="bg-emerald-600 text-white font-medium !px-3 !py-1 text-xs rounded-lg hover:bg-emerald-700"
+                    onClick={() => setStatus.mutate({ id: g.id, status: 'ACTIVE' })}
+                  >
+                    ✓ Approve Gym
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn-outline !px-2 !py-1 text-xs"
