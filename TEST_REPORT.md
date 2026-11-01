@@ -211,7 +211,27 @@ Running 14 tests using 1 worker
 
 ---
 
-## 6. NOT VERIFIED (Not Run in This Linux Container Environment)
+## 6. Full-Stack Super Admin & Gym Owner Dashboard + Password Reset Verification (`scripts/verify-all.ts`)
+
+**Command**
+```bash
+./node_modules/.bin/tsx scripts/verify-all.ts
+```
+
+**Verified Fixes & Outcomes**
+- **Super Admin Console (`/admin`) & Bottom Navigation Bar**:
+  - Pending Gym Approvals banner highlights `PENDING` gyms (including newly registered gyms like `ABC Gym`) with a 1-click **`✓ Approve Gym`** button (`POST /api/v1/admin/gyms/:id/status`) and **`Open Dashboard →`** context switcher.
+  - Lower navigation bar (`Gyms`, `Home`, `Members`, `Billing`, `PT & Commissions`, `Messages`/`Attendance`, `More`) is unlocked for `SUPER_ADMIN` using `X-Gym-Id` tenant context switching without redirecting back to `/admin`.
+  - Super Admin modal actions (`Update owner details`, `Update` subscription, `Send password reset`, `+ Create gym`) persist to `/data/db.json`.
+- **Gym Owner Login & Password Reset Flow (`ABC-GYM-101` / `+919876543210`)**:
+  - `POST /api/v1/auth/login` authenticates both by password (`12345678`) and preserves accurate role (`GYM_OWNER` vs `SUPER_ADMIN`) across `POST /api/v1/auth/refresh` using user-bound token encoding.
+  - `POST /api/v1/admin/gyms/:id/password-reset` and `POST /api/v1/auth/password-reset/request` persist reset tokens to `db.resetTokens`, and `POST /api/v1/auth/password-reset/confirm` updates the owner's password in `db.users`.
+- **Gym Owner Dashboard (`/app/*`)**:
+  - Verified all routes and mutations: Dashboard KPIs & charts, Members & Member Detail (including in-app DPDP Erase confirmation modal and JSON export), Billing (Invoices, PDF download, Credit Notes, Payment confirm/reject), PT & Commissions, Attendance & QR/PIN Check-in, Messaging, Plans, Leads, Reports, CSV Import, Settings, and Audit Logs.
+
+---
+
+## 7. NOT VERIFIED (Not Run in This Linux Container Environment)
 
 | Item | Reason |
 |---|---|

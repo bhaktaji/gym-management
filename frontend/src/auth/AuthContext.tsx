@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, getTokens, setTokens, setUnauthorizedHandler } from '../lib/api'
+import { api, getTokens, setSelectedGymId, setTokens, setUnauthorizedHandler } from '../lib/api'
 
 export type AuthUser = {
   id: string
@@ -47,12 +47,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setTokens(null)
+      setSelectedGymId(null)
       setUser(null)
     })
     void refreshUser()
   }, [refreshUser])
 
   const login = useCallback(async (phone: string, password: string) => {
+    setSelectedGymId(null)
     const data = await api<{ accessToken: string; refreshToken: string; user: AuthUser }>(
       '/api/v1/auth/login',
       { method: 'POST', body: { phone, password }, auth: false },
@@ -74,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     }
     setTokens(null)
+    setSelectedGymId(null)
     setUser(null)
   }, [])
 

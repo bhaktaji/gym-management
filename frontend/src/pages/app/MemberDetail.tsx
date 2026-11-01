@@ -36,6 +36,7 @@ export function MemberDetail() {
   const [error, setError] = useState('')
   const [renewPlanId, setRenewPlanId] = useState('')
   const [showRenew, setShowRenew] = useState(false)
+  const [showEraseConfirm, setShowEraseConfirm] = useState(false)
   const [newPinNotice, setNewPinNotice] = useState<string | null>(null)
 
   const gym = useQuery({
@@ -213,9 +214,7 @@ export function MemberDetail() {
           <button
             type="button"
             className="btn-danger"
-            onClick={() => {
-              if (window.confirm(t('members.eraseConfirm'))) erase.mutate()
-            }}
+            onClick={() => setShowEraseConfirm(true)}
           >
             {t('members.erase')}
           </button>
@@ -417,6 +416,29 @@ export function MemberDetail() {
             ))}
           </select>
         </Field>
+      </Modal>
+
+      <Modal
+        open={showEraseConfirm}
+        title={t('members.erase')}
+        onClose={() => setShowEraseConfirm(false)}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setShowEraseConfirm(false)}>
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={erase.isPending}
+              onClick={() => erase.mutate()}
+            >
+              {t('common.confirm')}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-700">{t('members.eraseConfirm')}</p>
       </Modal>
     </div>
   )

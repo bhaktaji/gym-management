@@ -53,11 +53,14 @@ export function Login() {
     if (!forgotPhone.trim()) return
     setError('')
     try {
-      await api('/api/v1/auth/password-reset/request', {
+      const res = await api<{ success: boolean; resetToken?: string }>('/api/v1/auth/password-reset/request', {
         method: 'POST',
         body: { phone: forgotPhone.trim() },
         auth: false,
       })
+      if (res?.resetToken) {
+        setResetTokenInput(res.resetToken)
+      }
       setResetDone(t('auth.resetRequested'))
       setForgotMode('confirm')
     } catch {
@@ -72,7 +75,11 @@ export function Login() {
     try {
       await api('/api/v1/auth/password-reset/confirm', {
         method: 'POST',
-        body: { token: resetTokenInput.trim(), newPassword: newPasswordInput },
+        body: {
+          token: resetTokenInput.trim(),
+          newPassword: newPasswordInput,
+          phone: forgotPhone.trim() || undefined,
+        },
         auth: false,
       })
       setResetDone(t('auth.passwordResetDone'))

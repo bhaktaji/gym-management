@@ -99,7 +99,8 @@ Test the platform instantly using the seeded demo dataset (`DEMO_DATA.md`):
 
 | Role | Gym Name & Code | Phone | Password | Access Console |
 | :--- | :--- | :--- | :--- | :--- |
-| **`SUPER_ADMIN`** | Platform Admin Console | `+919000000001` | `DemoAdmin@2026` | `/admin` |
+| **`SUPER_ADMIN`** | Platform Admin Console | `9915110640` *(or `+919000000001`)* | `12345678*&^%$#@!` *(or `DemoAdmin@2026`)* | `/admin` + All `/app/*` tabs |
+| **`GYM_OWNER`** | `ABC-GYM-101` (ABC Gym, Delhi) | `+919876543210` | `12345678` | `/app` (Approved & Active) |
 | **`GYM_OWNER`** | `BAJRANG-LKO` (Bajrang Powerhouse, UP) | `+919810010001` | `DemoOwner@2026` | `/app` (GST-Registered) |
 | **`GYM_OWNER`** | `IRONCORE-IND` (IronCore Strength Club, MP) | `+919810010002` | `DemoOwner@2026` | `/app` (Inter-state GST) |
 | **`GYM_OWNER`** | `SURYA-JPR` (Surya Akhada & Gym, RJ) | `+919810010003` | `DemoOwner@2026` | `/app` (Bill of Supply) |
@@ -120,9 +121,10 @@ Test the platform instantly using the seeded demo dataset (`DEMO_DATA.md`):
 
 - **Engineering Quality (as of last test run):**
   - Backend Unit & Integration Tests: **113 tests passing** (Spring Boot + MongoDB).
+  - Full-Stack End-to-End API & UI Verification (`scripts/verify-all.ts`): **All Super Admin & Gym Owner dashboard flows, pending approvals, bottom navigation tabs, and password reset token flows verified**.
   - Frontend Component Tests: **10 Vitest tests passing**.
   - Real-Backend E2E Suite: **14 Playwright tests passing** (Desktop & Mobile 390px).
-- **Security Architecture:** Stateless JWT authentication with rotating refresh tokens, rate-limited public endpoints, strict role-based access control (Super Admin vs. single Gym Owner), and exponential backoff on PIN lockouts.
+- **Security Architecture:** Stateless JWT authentication with rotating refresh tokens, persistent password reset token verification, rate-limited public endpoints, role-based access control (Super Admin with multi-gym inspection via `X-Gym-Id` vs. single Gym Owner), and exponential backoff on PIN lockouts.
 - **Traction & Pipeline:** `[ADD: Traction Metrics]`
 - **Detailed Overview:** Read [`docs/INVESTOR_OVERVIEW.md`](docs/INVESTOR_OVERVIEW.md).
 

@@ -37,7 +37,8 @@ All phone numbers may be entered in any Indian format (`+91 98100 10001`, `09810
 
 | Role | Gym Code & Name | Scenario Covered | Phone | Demo Password | Expected Login Outcome |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`SUPER_ADMIN`** | *(Platform Level)* | Platform administration, tenant management, approvals, audit log | `+919000000001` | `DemoAdmin@2026` | Logs into `/admin` dashboard |
+| **`SUPER_ADMIN`** | *(Platform Level)* | Platform administration, tenant management, pending gym approvals, multi-gym bottom-bar navigation (`Gyms`, `Home`, `Members`, `Billing`, `PT & Commissions`, `Messages`/`Attendance`, `More`), audit log | `9915110640` / `+919000000001` | `12345678*&^%$#@!` / `DemoAdmin@2026` | Logs into `/admin` dashboard with full access to `/app/*` tabs |
+| **`GYM_OWNER`** | `ABC-GYM-101` — **ABC Gym (एबीसी जिम)** | **Approved self-signup gym (`Delhi`), persistent password reset & login verified** | `+919876543210` | `12345678` | Logs into `/app` owner dashboard |
 | **`GYM_OWNER`** | `BAJRANG-LKO` — **Bajrang Powerhouse & Fitness (बजरंग पावरहाउस)** | **(a) GST-registered (`09AABCB1234F1Z5`), intra-state (`Uttar Pradesh` -> CGST 9% + SGST 9%), UPI VPA set (`bajrangfitness@okaxis`)** | `+919810010001` | `DemoOwner@2026` | Logs into `/app` owner dashboard |
 | **`GYM_OWNER`** | `IRONCORE-IND` — **IronCore Strength Club (आयरनकोर स्ट्रेंथ क्लब)** | **(b) GST-registered (`23AAACI5678G1Z2`, `Madhya Pradesh`) with inter-state customers (`Maharashtra`, `Gujarat`, `Rajasthan`, `Uttar Pradesh` -> IGST 18%)** | `+919810010002` | `DemoOwner@2026` | Logs into `/app` owner dashboard |
 | **`GYM_OWNER`** | `SURYA-JPR` — **Surya Akhada & Gym (सूर्य अखाड़ा एवं जिम)** | **(c) Not GST-registered (`Bill of Supply`, 0 tax lines, `Rajasthan`), UPI VPA `suryaakhada@paytm`** | `+919810010003` | `DemoOwner@2026` | Logs into `/app` owner dashboard |

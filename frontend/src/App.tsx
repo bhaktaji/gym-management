@@ -45,7 +45,7 @@ function Protected({ children, role }: { children: React.ReactNode; role?: 'SUPE
 
 function OwnerRoute({ children }: { children: React.ReactNode }) {
   return (
-    <Protected role="GYM_OWNER">
+    <Protected>
       <AppShell>{children}</AppShell>
     </Protected>
   )

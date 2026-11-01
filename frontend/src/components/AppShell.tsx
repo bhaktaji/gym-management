@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
@@ -23,11 +23,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
+  const isOnAdminPage = location.pathname.startsWith('/admin')
 
   const gym = useQuery({
     queryKey: ['gym'],
     queryFn: () => api<GymInfo>('/api/v1/tenant/gym'),
-    enabled: Boolean(user && user.role !== 'SUPER_ADMIN'),
+    enabled: Boolean(user && (!isSuperAdmin || !isOnAdminPage)),
   })
 
   const buildInfo = useQuery({
@@ -39,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const attendanceEnabled = Boolean(gym.data?.settings?.attendanceEnabled)
 
   const ownerLinks = [
+    ...(isSuperAdmin ? [{ to: '/admin', label: 'admin', end: true }] : []),
     { to: '/app', label: 'home', end: true },
     { to: '/app/members', label: 'members' },
     { to: '/app/billing', label: 'billing' },
@@ -56,10 +61,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="h-8 w-8 rounded-lg bg-brand-700 text-white grid place-items-center font-bold shrink-0">G</span>
             <div className="min-w-0">
               <p className="font-semibold leading-tight truncate">{t('app.name')}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.name}</p>
+              <p className="text-xs text-slate-500 truncate">
+                {user?.name}
+                {isSuperAdmin && !isOnAdminPage && gym.data?.name ? ` · Viewing: ${gym.data.name}` : ''}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isSuperAdmin && !isOnAdminPage ? (
+              <button
+                type="button"
+                onClick={() => navigate('/admin')}
+                className="btn-outline !px-2.5 !py-1 text-xs"
+              >
+                ← Platform Admin
+              </button>
+            ) : null}
             <LanguageToggle />
             <button
               type="button"
@@ -85,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </footer>
 
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 safe-bottom z-30">
-        <div className="max-w-5xl mx-auto grid grid-cols-6">
+        <div className={`max-w-5xl mx-auto grid ${isSuperAdmin ? 'grid-cols-7' : 'grid-cols-6'}`}>
           {ownerLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -98,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }
             >
               <span className="text-lg leading-none">{icon(link.label)}</span>
-              {t(`nav.${link.label}`)}
+              {link.label === 'admin' ? 'Gyms' : t(`nav.${link.label}`)}
             </NavLink>
           ))}
           <NavLink
@@ -120,6 +137,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function icon(label: string): string {
   switch (label) {
+    case 'admin':
+      return '🛡️'
     case 'home':
       return '⌂'
     case 'members':

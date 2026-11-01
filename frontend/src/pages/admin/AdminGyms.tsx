@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError } from '../../lib/api'
+import { api, ApiError, setSelectedGymId } from '../../lib/api'
 import { formatDate, formatDateTime } from '../../lib/format'
 import { Badge, EmptyState, ErrorNote, Field, Loader, Modal, PageHeader, statusTone } from '../../components/ui'
 
@@ -11,6 +12,7 @@ type GymSummary = {
   code: string
   ownerName: string
   ownerPhone: string
+  ownerEmail?: string
   city?: string
   state?: string
   gstRegistered: boolean
@@ -22,6 +24,7 @@ type GymSummary = {
 
 export function AdminGyms() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -69,6 +72,15 @@ export function AdminGyms() {
     onSuccess: () => {
       invalidate()
       setShowCreate(false)
+      setGymName('')
+      setOwnerName('')
+      setPhone('')
+      setEmail('')
+      setCity('')
+      setState('')
+      setGstin('')
+      setGstRegistered(false)
+      setPassword('')
       setSuccess(t('admin.gymCreated'))
       setError('')
     },
@@ -78,7 +90,11 @@ export function AdminGyms() {
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api(`/api/v1/admin/gyms/${id}/status`, { method: 'POST', body: { status } }),
-    onSuccess: invalidate,
+    onSuccess: (_res, vars) => {
+      invalidate()
+      setSuccess(`Gym status updated to ${vars.status}.`)
+      setError('')
+    },
     onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
   })
 
@@ -91,6 +107,8 @@ export function AdminGyms() {
     onSuccess: () => {
       invalidate()
       setShowOwner(false)
+      setSuccess('Owner contact details updated.')
+      setError('')
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
   })
@@ -99,6 +117,7 @@ export function AdminGyms() {
     mutationFn: (id: string) => api<{ resetToken: string }>(`/api/v1/admin/gyms/${id}/password-reset`, { method: 'POST' }),
     onSuccess: (res) => {
       setSuccess(`${t('admin.resetTokenIssued')}: ${res.resetToken}`)
+      setError('')
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
   })
@@ -109,14 +128,16 @@ export function AdminGyms() {
     onSuccess: () => {
       invalidate()
       setShowSubscription(false)
+      setSuccess('Subscription validity updated.')
+      setError('')
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
   })
 
   const openOwner = (g: GymSummary) => {
     setTarget(g)
-    setOwnerPhone('')
-    setOwnerEmail('')
+    setOwnerPhone(g.ownerPhone ?? '')
+    setOwnerEmail(g.ownerEmail ?? '')
     setShowOwner(true)
   }
 
@@ -125,6 +146,8 @@ export function AdminGyms() {
     setValidUntil(g.subscriptionValidUntil ?? '')
     setShowSubscription(true)
   }
+
+  const pendingGyms = (data ?? []).filter((g) => g.status === 'PENDING')
 
   return (
     <div>
@@ -138,8 +161,29 @@ export function AdminGyms() {
         }
       />
 
+      {pendingGyms.length > 0 ? (
+        <div
+          data-testid="pending-gyms-banner"
+          className="mb-4 rounded-xl bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-950 flex items-center justify-between gap-3"
+        >
+          <div>
+            <span className="font-semibold">
+              {pendingGyms.length} Pending Gym Approval {pendingGyms.length === 1 ? 'Request' : 'Requests'}:
+            </span>{' '}
+            {pendingGyms.map((g) => g.name).join(', ')}
+          </div>
+          <Badge tone="amber">ACTION REQUIRED</Badge>
+        </div>
+      ) : null}
+
       {error ? <div className="mb-3"><ErrorNote message={error} /></div> : null}
-      {success ? <div className="mb-3"><div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 text-sm break-all">{success}</div></div> : null}
+      {success ? (
+        <div className="mb-3">
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 text-sm break-all">
+            {success}
+          </div>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <Loader />
@@ -148,7 +192,11 @@ export function AdminGyms() {
       ) : (
         <ul className="space-y-3">
           {(data ?? []).map((g) => (
-            <li key={g.id} className="card">
+            <li
+              key={g.id}
+              data-testid={`gym-card-${g.id}`}
+              className={`card ${g.status === 'PENDING' ? 'border-amber-400 bg-amber-50/20' : ''}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900">{g.name}</p>
@@ -163,7 +211,9 @@ export function AdminGyms() {
                 </div>
                 <div className="text-right shrink-0">
                   <Badge tone={statusTone(g.status)}>{g.status}</Badge>
-                  <p className="text-xs text-slate-500 mt-1">{g.activeMembers} {t('admin.members')}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {g.activeMembers} {t('admin.members')}
+                  </p>
                   <p className="text-xs text-slate-500">{g.gstRegistered ? t('admin.gstRegistered') : '-'}</p>
                 </div>
               </div>
@@ -180,15 +230,16 @@ export function AdminGyms() {
               </dl>
 
               <div className="flex flex-wrap gap-2 mt-3">
-                {g.status === 'PENDING' && (
+                {g.status === 'PENDING' ? (
                   <button
                     type="button"
+                    data-testid={`approve-gym-btn-${g.id}`}
                     className="bg-emerald-600 text-white font-medium !px-3 !py-1 text-xs rounded-lg hover:bg-emerald-700"
                     onClick={() => setStatus.mutate({ id: g.id, status: 'ACTIVE' })}
                   >
                     ✓ Approve Gym
                   </button>
-                )}
+                ) : null}
                 <button
                   type="button"
                   className="btn-outline !px-2 !py-1 text-xs"
@@ -206,6 +257,18 @@ export function AdminGyms() {
                 </button>
                 <button type="button" className="btn-outline !px-2 !py-1 text-xs" onClick={() => resetPassword.mutate(g.id)}>
                   {t('admin.resetPassword')}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`open-gym-dashboard-${g.id}`}
+                  className="btn-secondary !px-2.5 !py-1 text-xs"
+                  onClick={() => {
+                    setSelectedGymId(g.id)
+                    void queryClient.invalidateQueries()
+                    navigate('/app')
+                  }}
+                >
+                  Open Dashboard →
                 </button>
               </div>
             </li>
@@ -258,7 +321,7 @@ export function AdminGyms() {
           {t('admin.gstRegistered')}
         </label>
         {gstRegistered ? (
-          <Field label={t('admin.gstin')}>
+          <Field label={t('settings.gstin')}>
             <input className="input font-mono" value={gstin} onChange={(e) => setGstin(e.target.value.toUpperCase())} />
           </Field>
         ) : null}
@@ -282,20 +345,17 @@ export function AdminGyms() {
           </>
         }
       >
-        <p className="text-xs text-slate-500 mb-3">
-          {target?.name} · {target?.ownerName} · {target?.ownerPhone}
-        </p>
-        <Field label={t('common.phone')}>
+        <Field label={t('admin.newPhone')}>
           <input className="input" inputMode="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} />
         </Field>
-        <Field label={t('common.email')}>
+        <Field label={t('admin.newEmail')}>
           <input className="input" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
         </Field>
       </Modal>
 
       <Modal
         open={showSubscription}
-        title={t('admin.subscriptionUntil')}
+        title={t('admin.updateSubscription')}
         onClose={() => setShowSubscription(false)}
         footer={
           <>
@@ -303,7 +363,7 @@ export function AdminGyms() {
               {t('common.cancel')}
             </button>
             <button type="button" className="btn-primary" onClick={() => setSubscription.mutate()}>
-              {t('admin.updateSubscription')}
+              {t('common.save')}
             </button>
           </>
         }
